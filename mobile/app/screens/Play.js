@@ -35,7 +35,7 @@ function NameWithScore({ name, score, delta }) {
   );
 }
 
-function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onMidLayout, onBotLayout, topAnchorRef, midAnchorRef, botAnchorRef, showTimer, timerProgress }) {
+function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onMidLayout, onBotLayout, topAnchorRef, midAnchorRef, botAnchorRef }) {
   const tiny = true;
   const capRow = (ref, onLayout, anchorRef, cards, cap) => (
     <View ref={ref} onLayout={onLayout} style={{ flexDirection: "row", alignSelf: "center", marginBottom: 2, position: 'relative' }}>
@@ -58,28 +58,7 @@ function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onM
       {capRow(midRef, onMidLayout, midAnchorRef, board.middle || [], 5)}
       {capRow(botRef, onBotLayout, botAnchorRef, board.bottom || [], 5)}
       
-      {/* Opponent timer bar */}
-      {showTimer && (
-        <View style={{ 
-          marginTop: 8,
-          height: TIMER_HEIGHT,
-          backgroundColor: colors.bg,
-          overflow: 'hidden',
-          borderRadius: 2,
-          alignSelf: 'center',
-          width: (40 + 3) * 5 - 3 // Width of 5 tiny cards (40px each) with 3px gaps
-        }}>
-          <View style={{
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            height: TIMER_HEIGHT,
-            width: `${timerProgress}%`,
-            backgroundColor: '#FFD700', // Yellow color
-            borderRadius: 2
-          }} />
-        </View>
-      )}
+
     </View>
   );
 }
@@ -140,12 +119,10 @@ export default function Play({ route }) {
 
   const { drag } = useDrag();
 
-  // Timer state
-  const [timeLeft, setTimeLeft] = useState(TIMER_DURATION * 1000); // Store in milliseconds
+  // Timer state - just display server timer
+  const [serverTimeLeft, setServerTimeLeft] = useState(TIMER_DURATION * 1000);
   const [isTimerActive, setIsTimerActive] = useState(false);
-  const [opponentTimeLeft, setOpponentTimeLeft] = useState(TIMER_DURATION * 1000); // Opponent timer
-  const [isOpponentTimerActive, setIsOpponentTimerActive] = useState(false);
-  const timerRef = useRef(null);
+  const [readyPlayers, setReadyPlayers] = useState(new Set());
 
   // measure rows for hover/drop (player)
   const topRef = useRef(null), midRef = useRef(null), botRef = useRef(null);
@@ -190,20 +167,15 @@ export default function Play({ route }) {
         }
       }
       if (evt === 'action:ready') {
-        console.log("Action ready received:", data);
-        // Stop the timer for the player who clicked ready
+        // Add player to ready set
         const meId = useGame.getState().userId;
         const committingPlayerId = data?.userId;
         
-        if (committingPlayerId === meId) {
-          // I clicked ready - stop my timer
-          console.log("I clicked ready - stopping my timer");
-          setIsTimerActive(false);
-        } else {
-          // Opponent clicked ready - stop opponent's timer
-          console.log("Opponent clicked ready - stopping opponent timer");
-          setIsOpponentTimerActive(false);
-        }
+        setReadyPlayers(prev => {
+          const newSet = new Set(prev);
+          newSet.add(committingPlayerId);
+          return newSet;
+        });
       }
       applyEvent(evt, data);
     });
@@ -316,136 +288,38 @@ export default function Play({ route }) {
     playSfx('commit');
     commitTurnLocal(leftover);
     
-    // Stop my timer when I commit (don't restart it)
-    setIsTimerActive(false);
+    // Add myself to ready set
+    setReadyPlayers(prev => {
+      const newSet = new Set(prev);
+      newSet.add(userId);
+      return newSet;
+    });
   };
 
-  // Auto-commit function when timer reaches zero
-  const autoCommit = () => {
-    // Don't check canCommit() here - we want to auto-commit even if not all cards are placed
-    const { currentDeal } = useGame.getState();
-    const placedSet = new Set(staged.placements.map(p => p.card));
-    const remainingCards = (currentDeal || []).filter(c => !placedSet.has(c));
-    
-    // Auto-place remaining cards in order: top row first, then middle, then bottom
-    let cardIndex = 0;
-    const autoPlacements = [...staged.placements];
-    
-    // Fill top row (3 slots)
-    const topSlots = 3 - (board.top.length + stagedTop.length);
-    for (let i = 0; i < topSlots && cardIndex < remainingCards.length; i++) {
-      autoPlacements.push({ row: "top", card: remainingCards[cardIndex] });
-      cardIndex++;
-    }
-    
-    // Fill middle row (5 slots)
-    const middleSlots = 5 - (board.middle.length + stagedMiddle.length);
-    for (let i = 0; i < middleSlots && cardIndex < remainingCards.length; i++) {
-      autoPlacements.push({ row: "middle", card: remainingCards[cardIndex] });
-      cardIndex++;
-    }
-    
-    // Fill bottom row (5 slots)
-    const bottomSlots = 5 - (board.bottom.length + stagedBottom.length);
-    for (let i = 0; i < bottomSlots && cardIndex < remainingCards.length; i++) {
-      autoPlacements.push({ row: "bottom", card: remainingCards[cardIndex] });
-      cardIndex++;
-    }
-    
-    // Find leftover card (if any)
-    const leftover = cardIndex < remainingCards.length ? remainingCards[cardIndex] : null;
-    
-    // Commit the auto-placements
-    const { userId } = useGame.getState();
-    emit("action:ready", { roomId, placements: autoPlacements, discard: leftover || undefined, userId });
-    playSfx('commit');
-    commitTurnLocal(leftover);
-    
-    // Stop timer
-    setIsTimerActive(false);
-    setIsOpponentTimerActive(false);
-  };
 
-  // Timer effect with smooth animation
+
+  // Handle server timer updates
   useEffect(() => {
-    console.log("Timer effect check:", {
-      isTimerActive,
-      isOpponentTimerActive,
-      timeLeft,
-      opponentTimeLeft,
-      hasTimerRef: !!timerRef.current
-    });
-    
-    if ((isTimerActive || isOpponentTimerActive) && (timeLeft > 0 || opponentTimeLeft > 0)) {
-      console.log("Starting timer interval");
-      timerRef.current = setInterval(() => {
-        if (isTimerActive && timeLeft > 0) {
-          setTimeLeft(prev => {
-            if (prev <= 50) {
-              // Timer reached zero - auto commit
-              console.log("Timer reached zero - auto committing");
-              autoCommit();
-              return 0;
-            }
-            return prev - 50;
-          });
-        }
-        
-        if (isOpponentTimerActive && opponentTimeLeft > 0) {
-          setOpponentTimeLeft(prev => {
-            if (prev <= 50) {
-              return 0;
-            }
-            return prev - 50;
-          });
-        }
-      }, 50); // 50ms for smooth animation
-    }
-    
-    return () => {
-      if (timerRef.current) {
-        console.log("Clearing timer interval");
-        clearInterval(timerRef.current);
-        timerRef.current = null;
+    const off = onSocketEvent((evt, data) => {
+      if (evt === "timer:update") {
+        setServerTimeLeft(data.timeLeft);
+        setIsTimerActive(data.isActive);
       }
-    };
-  }, [isTimerActive, isOpponentTimerActive, timeLeft, opponentTimeLeft]);
-
-  // Start timer when new cards are dealt (when hand changes and no cards are staged)
-  useEffect(() => {
-    console.log("Timer start check:", {
-      handLength: hand.length,
-      stagedLength: staged.placements.length,
-      reveal: !!reveal,
-      isTimerActive,
-      isOpponentTimerActive
-    });
-    
-    if (hand.length > 0 && staged.placements.length === 0 && !reveal) {
-      console.log("Starting timer for new round");
-      // Start timer for new round
-      setTimeLeft(TIMER_DURATION * 1000);
-      setOpponentTimeLeft(TIMER_DURATION * 1000);
-      setIsTimerActive(true);
-      setIsOpponentTimerActive(true);
-    }
-  }, [hand, staged.placements.length, reveal]);
-
-  // Stop timer when round is revealed
-  useEffect(() => {
-    if (reveal) {
-      console.log("Round revealed - stopping timers");
-      setIsTimerActive(false);
-      setIsOpponentTimerActive(false);
-      // Reset timer state for next round
-      setTimeLeft(TIMER_DURATION * 1000);
-      setOpponentTimeLeft(TIMER_DURATION * 1000);
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
+      if (evt === "timer:start") {
+        setServerTimeLeft(TIMER_DURATION * 1000);
+        setIsTimerActive(true);
+        setReadyPlayers(new Set());
       }
-    }
-  }, [reveal]);
+      if (evt === "timer:stop") {
+        setIsTimerActive(false);
+      }
+    });
+    return () => off();
+  }, []);
+
+
+
+
 
   const needed = turnCap();
   const stagedCount = staged.placements.length;
@@ -471,8 +345,6 @@ export default function Play({ route }) {
           topAnchorRef={oTopAnchorRef}
           midAnchorRef={oMidAnchorRef}
           botAnchorRef={oBotAnchorRef}
-          showTimer={isOpponentTimerActive}
-          timerProgress={(opponentTimeLeft / (TIMER_DURATION * 1000)) * 100}
         />
       </View>
 
@@ -638,7 +510,7 @@ export default function Play({ route }) {
             left: 0,
             top: 0,
             height: TIMER_HEIGHT,
-            width: `${(timeLeft / (TIMER_DURATION * 1000)) * 100}%`,
+            width: `${(serverTimeLeft / (TIMER_DURATION * 1000)) * 100}%`,
             backgroundColor: '#FFD700', // Yellow color
             borderRadius: 0
           }} />

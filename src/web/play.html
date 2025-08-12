@@ -195,7 +195,12 @@
 
     // Timer functions
     function startTimer() {
-      console.log("Starting timer for new round");
+      console.log("Starting timer for new round", {
+        timeLeft,
+        opponentTimeLeft,
+        isTimerActive,
+        isOpponentTimerActive
+      });
       timeLeft = TIMER_DURATION * 1000;
       opponentTimeLeft = TIMER_DURATION * 1000;
       isTimerActive = true;
@@ -249,6 +254,17 @@
         opponentTimeLeft -= TIMER_UPDATE_INTERVAL;
         const progress = (opponentTimeLeft / (TIMER_DURATION * 1000)) * 100;
         $('opponentTimerBar').style.width = progress + '%';
+      }
+      
+      // Debug logging every 2 seconds
+      if (timeLeft % 2000 < TIMER_UPDATE_INTERVAL) {
+        console.log("Timer update:", {
+          timeLeft,
+          opponentTimeLeft,
+          isTimerActive,
+          isOpponentTimerActive,
+          hasInterval: !!timerInterval
+        });
       }
     }
     
@@ -507,13 +523,16 @@
 
     socket.on("room:state", (s)=>{ setPhase(s.phase); log("STATE\n"+JSON.stringify(s,null,2)); });
     socket.on("round:start", ({round})=>{
+      console.log("Round start:", round);
       myBoard={top:[],middle:[],bottom:[]}; myDiscards=[]; staged={placements:[],discard:null}; lastBatch=[];
       $('revealPanel').textContent='—'; renderHand(); refreshBoard(); log("START round "+round);
+      // Reset timer state for new round
+      stopTimer();
     });
     socket.on("round:deal", ({cards})=>{
       lastBatch = cards.slice(); myHand = myHand.concat(cards); renderHand(); $('ready').disabled=!canSet(); log("DEAL "+JSON.stringify(cards));
-      // Start timer when new cards are dealt
-      if (cards.length > 0 && staged.placements.length === 0) {
+      // Start timer when new cards are dealt (for any round)
+      if (cards.length > 0) {
         startTimer();
       }
       // remove "new" glow after a moment
