@@ -1,6 +1,7 @@
 import sqlite3 from 'sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -8,7 +9,21 @@ const __dirname = path.dirname(__filename);
 let db;
 
 export async function initDatabase() {
-  db = new sqlite3.Database(path.join(__dirname, '../../data/users.db'), (err) => {
+  const dbPath = path.join(__dirname, '../../data/users.db');
+  const dataDir = path.dirname(dbPath);
+  
+  // Create data directory if it doesn't exist
+  try {
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+      console.log('Created data directory:', dataDir);
+    }
+  } catch (error) {
+    console.error('Error creating data directory:', error);
+    throw error;
+  }
+
+  db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
       console.error('Error opening database:', err);
     } else {
