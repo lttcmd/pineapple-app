@@ -1,0 +1,19 @@
+{
+  "name": "ofc-pineapple-tourney",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "body-parser": "^2.2.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.1",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "nanoid": "^5.1.5",
+    "socket.io": "^4.7.2",
+    "sqlite3": "^5.1.7"
+  }
+}
