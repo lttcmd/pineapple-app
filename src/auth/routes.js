@@ -75,15 +75,14 @@ authRoutes.get("/me", async (req, res) => {
   if (!token) return res.status(401).json({ error: "missing token" });
   try {
     const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
-    console.log("Token payload:", payload);
+    console.log("Token payload:", { sub: payload.sub, dbId: payload.dbId });
     
     const profile = mem.players.get(payload.sub);
     if (!profile) return res.status(404).json({ error: "not found" });
-    console.log("Profile from mem:", profile);
     
     // Get username and avatar from database
     const dbUser = await getUserByPhone(profile.phone);
-    console.log("Database user:", dbUser);
+    console.log("Database user found:", dbUser ? `username: ${dbUser.username}, hasAvatar: ${!!dbUser.avatar}` : "not found");
     
     const userProfile = {
       ...profile,
@@ -91,7 +90,7 @@ authRoutes.get("/me", async (req, res) => {
       avatar: dbUser?.avatar || null
     };
     
-    console.log("Final user profile:", userProfile);
+    console.log("Profile response - username:", userProfile.username, "hasAvatar:", !!userProfile.avatar);
     res.json(userProfile);
   } catch (error) {
     console.error("Error in /me endpoint:", error);

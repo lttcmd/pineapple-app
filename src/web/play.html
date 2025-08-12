@@ -44,6 +44,38 @@
     .card.clubs    { color: #66d06f; }
     .card.spades   { color: #e7e8ea; }
 
+    /* Timer styles */
+    .timer-container {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background-color: var(--bg);
+      overflow: hidden;
+      z-index: 1000;
+    }
+    .timer-bar {
+      height: 100%;
+      background-color: #FFD700;
+      transition: width 0.05s linear;
+    }
+    .opponent-timer {
+      margin-top: 8px;
+      height: 4px;
+      background-color: var(--bg);
+      border-radius: 2px;
+      overflow: hidden;
+      width: 215px; /* Width of 5 tiny cards (40px each) with 3px gaps */
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .opponent-timer-bar {
+      height: 100%;
+      background-color: #FFD700;
+      transition: width 0.05s linear;
+    }
+
     /* Right column */
     #log { white-space:pre-wrap; background:#0b0e17; border:1px solid #2a3244; border-radius:10px; padding:10px; min-height:120px; color:#b9f6ca; }
     .small { font-size:12px; color:#b7c1d6; }
@@ -94,10 +126,20 @@
           <div class="subcap">Staged</div>
           <div class="rowline staged" id="discardStaged"></div>
         </div>
+        
+        <!-- Opponent timer -->
+        <div id="opponentTimer" class="opponent-timer" style="display: none;">
+          <div id="opponentTimerBar" class="opponent-timer-bar" style="width: 100%;"></div>
+        </div>
       </div>
 
       <h4 style="margin:12px 0 6px;">Your Hand</h4>
       <div id="hand" class="hand"></div>
+    </div>
+
+    <!-- Timer elements -->
+    <div id="timerContainer" class="timer-container" style="display: none;">
+      <div id="timerBar" class="timer-bar" style="width: 100%;"></div>
     </div>
 
     <div>
@@ -137,10 +179,128 @@
     let staged = { placements:[], discard:null };
     let lastBatch = [];
     const totals = new Map();
+    
+    // Timer state
+    const TIMER_DURATION = 15; // 15 seconds
+    const TIMER_UPDATE_INTERVAL = 50; // 50ms for smooth animation
+    let timeLeft = TIMER_DURATION * 1000; // Store in milliseconds
+    let opponentTimeLeft = TIMER_DURATION * 1000;
+    let isTimerActive = false;
+    let isOpponentTimerActive = false;
+    let timerInterval = null;
 
     // --- rendering helpers
     function suitClass(s){ return s==='h'?'hearts':s==='d'?'diamonds':s==='c'?'clubs':'spades'; }
     function suitSymbol(s){ return s==='h'?'♥':s==='d'?'♦':s==='c'?'♣':'♠'; }
+
+    // Timer functions
+    function startTimer() {
+      console.log("Starting timer for new round");
+      timeLeft = TIMER_DURATION * 1000;
+      opponentTimeLeft = TIMER_DURATION * 1000;
+      isTimerActive = true;
+      isOpponentTimerActive = true;
+      
+      // Show timer elements
+      $('timerContainer').style.display = 'block';
+      $('opponentTimer').style.display = 'block';
+      
+      // Start timer interval
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = setInterval(updateTimer, TIMER_UPDATE_INTERVAL);
+    }
+    
+    function stopTimer() {
+      isTimerActive = false;
+      isOpponentTimerActive = false;
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+      
+      // Hide timer elements
+      $('timerContainer').style.display = 'none';
+      $('opponentTimer').style.display = 'none';
+    }
+    
+    function stopMyTimer() {
+      isTimerActive = false;
+      $('timerContainer').style.display = 'none';
+    }
+    
+    function stopOpponentTimer() {
+      isOpponentTimerActive = false;
+      $('opponentTimer').style.display = 'none';
+    }
+    
+    function updateTimer() {
+      if (isTimerActive && timeLeft > 0) {
+        timeLeft -= TIMER_UPDATE_INTERVAL;
+        const progress = (timeLeft / (TIMER_DURATION * 1000)) * 100;
+        $('timerBar').style.width = progress + '%';
+        
+        if (timeLeft <= 0) {
+          console.log("Timer reached zero - auto committing");
+          autoCommit();
+        }
+      }
+      
+      if (isOpponentTimerActive && opponentTimeLeft > 0) {
+        opponentTimeLeft -= TIMER_UPDATE_INTERVAL;
+        const progress = (opponentTimeLeft / (TIMER_DURATION * 1000)) * 100;
+        $('opponentTimerBar').style.width = progress + '%';
+      }
+    }
+    
+    function autoCommit() {
+      console.log("Auto-committing cards");
+      
+      // Auto-place remaining cards in order: top row first, then middle, then bottom
+      const remainingCards = myHand.slice();
+      const autoPlacements = [...staged.placements];
+      
+      // Fill top row (3 slots)
+      const topSlots = 3 - (myBoard.top.length + getStagedByRow('top').length);
+      for (let i = 0; i < topSlots && remainingCards.length > 0; i++) {
+        autoPlacements.push({ row: "top", card: remainingCards.shift() });
+      }
+      
+      // Fill middle row (5 slots)
+      const middleSlots = 5 - (myBoard.middle.length + getStagedByRow('middle').length);
+      for (let i = 0; i < middleSlots && remainingCards.length > 0; i++) {
+        autoPlacements.push({ row: "middle", card: remainingCards.shift() });
+      }
+      
+      // Fill bottom row (5 slots)
+      const bottomSlots = 5 - (myBoard.bottom.length + getStagedByRow('bottom').length);
+      for (let i = 0; i < bottomSlots && remainingCards.length > 0; i++) {
+        autoPlacements.push({ row: "bottom", card: remainingCards.shift() });
+      }
+      
+      // Find leftover card (if any)
+      const leftover = remainingCards.length > 0 ? remainingCards[0] : null;
+      
+      // Commit the auto-placements
+      socket.emit("action:ready", {
+        roomId,
+        placements: autoPlacements,
+        discard: leftover,
+        userId: myUserId
+      });
+      
+      // Optimistic commit
+      for (const p of autoPlacements) myBoard[p.row].push(p.card);
+      if (leftover) myDiscards.push(leftover);
+      
+      // Clear hand and reset staging
+      myHand = [];
+      staged = { placements: [], discard: null };
+      lastBatch = [];
+      
+      renderHand();
+      refreshBoard();
+      stopTimer();
+    }
 
     function cardEl(code, isNew=false){
       const rank = code.slice(0,-1), suit = code.slice(-1);
@@ -254,8 +414,12 @@
   socket.emit("action:ready", {
     roomId,
     placements: staged.placements,
-    discard: staged.discard
+    discard: staged.discard,
+    userId: myUserId
   });
+
+  // Stop my timer when I commit
+  stopMyTimer();
 
   // optimistic commit
   for (const p of staged.placements) myBoard[p.row].push(p.card);
@@ -348,6 +512,10 @@
     });
     socket.on("round:deal", ({cards})=>{
       lastBatch = cards.slice(); myHand = myHand.concat(cards); renderHand(); $('ready').disabled=!canSet(); log("DEAL "+JSON.stringify(cards));
+      // Start timer when new cards are dealt
+      if (cards.length > 0 && staged.placements.length === 0) {
+        startTimer();
+      }
       // remove "new" glow after a moment
     });
     socket.on("round:reveal", (payload)=>{
@@ -355,6 +523,23 @@
       if (myUserId) renderRevealPanel(myUserId, payload);
       // reset staged so next hand starts clean
       staged={placements:[],discard:null}; $('ready').disabled=true;
+      // Stop timer when round is revealed
+      stopTimer();
+    });
+    socket.on("action:ready", (data)=>{
+      console.log("Action ready received:", data);
+      // Stop the timer for the player who clicked ready
+      const committingPlayerId = data?.userId;
+      
+      if (committingPlayerId === myUserId) {
+        // I clicked ready - stop my timer
+        console.log("I clicked ready - stopping my timer");
+        stopMyTimer();
+      } else {
+        // Opponent clicked ready - stop opponent's timer
+        console.log("Opponent clicked ready - stopping opponent timer");
+        stopOpponentTimer();
+      }
     });
     socket.on("error:msg", (e)=> log("ERROR "+e.message));
   </script>

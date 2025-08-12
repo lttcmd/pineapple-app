@@ -15,6 +15,25 @@ export default function Lobby({ navigation }) {
   const [avatar, setAvatar] = useState(null);
   const applyEvent = useGame(s => s.applyEvent);
 
+  const loadProfileData = async () => {
+    try {
+      const token = await SecureStore.getItemAsync("ofc_jwt");
+      if (!token) return;
+      console.log("Loading profile with token:", token.substring(0, 20) + "...");
+      
+      const r = await axios.get(`${SERVER_URL}/me`, { headers: { Authorization: `Bearer ${token}` } });
+      console.log("Profile loaded - username:", r.data?.username || "none");
+      console.log("Avatar:", r.data?.avatar ? "Present" : "Not present");
+      
+      setAvatar(r.data?.avatar || null);
+      if (r.data?.username) {
+        setUsername(r.data.username);
+      }
+    } catch (error) {
+      console.error('Error loading profile:', error);
+    }
+  };
+
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
@@ -32,28 +51,17 @@ export default function Lobby({ navigation }) {
   }, [navigation, avatar, username]);
 
   useEffect(() => {
-    // load profile avatar and username
-    (async () => {
-      try {
-        const token = await SecureStore.getItemAsync("ofc_jwt");
-        if (!token) return;
-        console.log("Loading profile with token:", token.substring(0, 20) + "...");
-        
-        const r = await axios.get(`${SERVER_URL}/me`, { headers: { Authorization: `Bearer ${token}` } });
-        console.log("Profile response:", r.data);
-        
-        setAvatar(r.data?.avatar || null);
-        if (r.data?.username) {
-          console.log("Setting username to:", r.data.username);
-          setUsername(r.data.username);
-        } else {
-          console.log("No username in response");
-        }
-      } catch (error) {
-        console.error('Error loading profile:', error);
-      }
-    })();
-  }, []);
+    // Load profile data on initial load
+    loadProfileData();
+
+    // Add focus listener to reload profile data when returning to this screen
+    const unsubscribe = navigation.addListener('focus', () => {
+      console.log("Lobby screen focused - reloading profile data");
+      loadProfileData();
+    });
+
+    return unsubscribe;
+  }, [navigation]);
 
   useEffect(() => {
     let off = () => {};
