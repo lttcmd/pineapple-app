@@ -38,6 +38,7 @@ export async function initDatabase() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         phone TEXT UNIQUE NOT NULL,
         username TEXT UNIQUE,
+        avatar TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -85,6 +86,19 @@ export async function setUsername(userId, username) {
     db.run(
       'UPDATE users SET username = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [username, userId],
+      (err) => {
+        if (err) reject(err);
+        else resolve();
+      }
+    );
+  });
+}
+
+export async function setAvatar(userId, avatar) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      'UPDATE users SET avatar = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [avatar, userId],
       (err) => {
         if (err) reject(err);
         else resolve();

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { sendOtp, verifyOtp } from "./service.js";
 import { mem } from "../store/mem.js";
-import { setUsername, getUserByUsername, getUserByPhone } from "../store/database.js";
+import { setUsername, getUserByUsername, getUserByPhone, setAvatar } from "../store/database.js";
 
 export const authRoutes = Router();
 
@@ -81,13 +81,14 @@ authRoutes.get("/me", async (req, res) => {
     if (!profile) return res.status(404).json({ error: "not found" });
     console.log("Profile from mem:", profile);
     
-    // Get username from database
+    // Get username and avatar from database
     const dbUser = await getUserByPhone(profile.phone);
     console.log("Database user:", dbUser);
     
     const userProfile = {
       ...profile,
-      username: dbUser?.username || null
+      username: dbUser?.username || null,
+      avatar: dbUser?.avatar || null
     };
     
     console.log("Final user profile:", userProfile);
@@ -95,6 +96,33 @@ authRoutes.get("/me", async (req, res) => {
   } catch (error) {
     console.error("Error in /me endpoint:", error);
     res.status(401).json({ error: "invalid token" });
+  }
+});
+
+// Update avatar (data URL or base64 string)
+authRoutes.post("/me/avatar", async (req, res) => {
+  const auth = req.headers.authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+  const { avatar } = req.body || {};
+  if (!token) return res.status(401).json({ error: "missing token" });
+  if (!avatar || typeof avatar !== 'string' || avatar.length > 2_000_000) {
+    return res.status(400).json({ error: "invalid avatar" });
+  }
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+    const dbId = payload.dbId;
+    
+    if (!dbId) {
+      return res.status(400).json({ error: "invalid token" });
+    }
+
+    // Set avatar in database
+    await setAvatar(dbId, avatar);
+    
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Error updating avatar:', error);
+    res.status(500).json({ error: "server error" });
   }
 });
 
@@ -111,26 +139,6 @@ authRoutes.post("/me/name", (req, res) => {
     if (!p) return res.status(404).json({ error: "not found" });
     if (p.name) return res.status(400).json({ error: "name already set" });
     p.name = name;
-    res.json({ ok: true });
-  } catch {
-    res.status(401).json({ error: "invalid token" });
-  }
-});
-
-// Update avatar (data URL or base64 string). Keep simple for now.
-authRoutes.post("/me/avatar", (req, res) => {
-  const auth = req.headers.authorization || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
-  const { avatar } = req.body || {};
-  if (!token) return res.status(401).json({ error: "missing token" });
-  if (!avatar || typeof avatar !== 'string' || avatar.length > 2_000_000) {
-    return res.status(400).json({ error: "invalid avatar" });
-  }
-  try {
-    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
-    const p = mem.players.get(payload.sub);
-    if (!p) return res.status(404).json({ error: "not found" });
-    p.avatar = avatar; // store as-is (data URL/base64)
     res.json({ ok: true });
   } catch {
     res.status(401).json({ error: "invalid token" });

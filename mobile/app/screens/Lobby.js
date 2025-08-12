@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, TextInput, Button, Image, Pressable } from "react-native";
+import { View, Text, TextInput, Button, Image, Pressable, StyleSheet } from "react-native";
 import { connectSocket, onSocketEvent, emit } from "../net/socket";
 import { useGame } from "../state/useGame";
 import { colors } from "../theme/colors";
@@ -97,10 +97,19 @@ export default function Lobby({ navigation }) {
     <View style={{ flex:1, backgroundColor: colors.bg, padding:16, gap:12 }}>
       <BackButton title="Sign Out" onPress={handleSignOut} />
       
-      {/* Welcome message with username */}
-      <Text style={{ color: colors.sub, fontSize: 16, textAlign: 'center', marginBottom: 20, marginTop: 80 }}>
-        Welcome, {username || "Player"}!
-      </Text>
+      {/* Profile Section */}
+      <View style={styles.profileSection}>
+        <Pressable onPress={() => navigation.navigate("Profile")} style={styles.profileButton}>
+          <View style={styles.profileCircle}>
+            {avatar ? (
+              <Image source={{ uri: avatar }} style={styles.profileImage} />
+            ) : (
+              <Text style={styles.profileInitial}>{(username || 'U').slice(0,1).toUpperCase()}</Text>
+            )}
+          </View>
+          <Text style={styles.profileName}>{username || "Player"}</Text>
+        </Pressable>
+      </View>
 
       <Panel style={{ gap:10 }}>
         <Button title="Create Room" onPress={() => emit("room:create")} />
@@ -129,3 +138,41 @@ export default function Lobby({ navigation }) {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  profileSection: {
+    alignItems: 'center',
+    marginTop: 80,
+    marginBottom: 20,
+  },
+  profileButton: {
+    alignItems: 'center',
+  },
+  profileCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 2,
+    borderColor: colors.outline,
+    backgroundColor: colors.panel2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    overflow: 'hidden',
+  },
+  profileImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  profileInitial: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: colors.text,
+  },
+  profileName: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.text,
+  },
+});
