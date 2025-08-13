@@ -12,7 +12,8 @@ const otpStore = new Map();
  * In dev, we just log it to the console.
  */
 export async function sendOtp(phone) {
-  const code = String(Math.floor(100000 + Math.random() * 900000));
+  // TEMPORARY: Always use 000000 for testing
+  const code = "000000";
   otpStore.set(phone, { code, expires: Date.now() + 5 * 60 * 1000 });
 
   // --- Real SMS (optional) ---
@@ -24,7 +25,7 @@ export async function sendOtp(phone) {
   // });
 
   // Dev helper: log it so you can copy/paste
-  console.log("DEV OTP for", phone, "=", code);
+  console.log("DEV OTP for", phone, "=", code, "(FIXED CODE FOR TESTING)");
   return true;
 }
 
