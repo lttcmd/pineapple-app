@@ -13,6 +13,11 @@ export const Events = {
   ACTION_APPLIED: "action:applied",
   REVEAL: "round:reveal",
 
+  // Timer events
+  TIMER_START: "timer:start",
+  TIMER_UPDATE: "timer:update",
+  TIMER_STOP: "timer:stop",
+
   ERROR: "error:msg",
   CHAT: "chat:msg"
 };

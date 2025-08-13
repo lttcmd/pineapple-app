@@ -180,143 +180,59 @@
     let lastBatch = [];
     const totals = new Map();
     
-    // Timer state
-    const TIMER_DURATION = 15; // 15 seconds
-    const TIMER_UPDATE_INTERVAL = 50; // 50ms for smooth animation
-    let timeLeft = TIMER_DURATION * 1000; // Store in milliseconds
-    let opponentTimeLeft = TIMER_DURATION * 1000;
+    // Timer state - now controlled by server
+    let serverTimeLeft = 15000; // 15 seconds in milliseconds
     let isTimerActive = false;
-    let isOpponentTimerActive = false;
-    let timerInterval = null;
 
     // --- rendering helpers
     function suitClass(s){ return s==='h'?'hearts':s==='d'?'diamonds':s==='c'?'clubs':'spades'; }
     function suitSymbol(s){ return s==='h'?'♥':s==='d'?'♦':s==='c'?'♣':'♠'; }
 
-    // Timer functions
-    function startTimer() {
-      console.log("Starting timer for new round", {
-        timeLeft,
-        opponentTimeLeft,
-        isTimerActive,
-        isOpponentTimerActive
-      });
-      timeLeft = TIMER_DURATION * 1000;
-      opponentTimeLeft = TIMER_DURATION * 1000;
-      isTimerActive = true;
-      isOpponentTimerActive = true;
+    // Server timer event handlers
+    function handleTimerStart(data) {
+      console.log("Server timer started:", data);
+      serverTimeLeft = data.timeLeft;
+      isTimerActive = data.isActive;
       
       // Show timer elements
       $('timerContainer').style.display = 'block';
       $('opponentTimer').style.display = 'block';
       
-      // Start timer interval
-      if (timerInterval) clearInterval(timerInterval);
-      timerInterval = setInterval(updateTimer, TIMER_UPDATE_INTERVAL);
+      // Update timer bar
+      const progress = (serverTimeLeft / 15000) * 100;
+      $('timerBar').style.width = progress + '%';
+      $('opponentTimerBar').style.width = progress + '%';
     }
     
-    function stopTimer() {
-      isTimerActive = false;
-      isOpponentTimerActive = false;
-      if (timerInterval) {
-        clearInterval(timerInterval);
-        timerInterval = null;
+    function handleTimerUpdate(data) {
+      serverTimeLeft = data.timeLeft;
+      isTimerActive = data.isActive;
+      
+      // Update timer bar
+      const progress = (serverTimeLeft / 15000) * 100;
+      $('timerBar').style.width = progress + '%';
+      $('opponentTimerBar').style.width = progress + '%';
+      
+      // Debug logging every 2 seconds
+      if (serverTimeLeft % 2000 < 100) {
+        console.log("Server timer update:", {
+          serverTimeLeft,
+          isTimerActive,
+          progress
+        });
       }
+    }
+    
+    function handleTimerStop() {
+      console.log("Server timer stopped");
+      isTimerActive = false;
       
       // Hide timer elements
       $('timerContainer').style.display = 'none';
       $('opponentTimer').style.display = 'none';
     }
     
-    function stopMyTimer() {
-      isTimerActive = false;
-      $('timerContainer').style.display = 'none';
-    }
-    
-    function stopOpponentTimer() {
-      isOpponentTimerActive = false;
-      $('opponentTimer').style.display = 'none';
-    }
-    
-    function updateTimer() {
-      if (isTimerActive && timeLeft > 0) {
-        timeLeft -= TIMER_UPDATE_INTERVAL;
-        const progress = (timeLeft / (TIMER_DURATION * 1000)) * 100;
-        $('timerBar').style.width = progress + '%';
-        
-        if (timeLeft <= 0) {
-          console.log("Timer reached zero - auto committing");
-          autoCommit();
-        }
-      }
-      
-      if (isOpponentTimerActive && opponentTimeLeft > 0) {
-        opponentTimeLeft -= TIMER_UPDATE_INTERVAL;
-        const progress = (opponentTimeLeft / (TIMER_DURATION * 1000)) * 100;
-        $('opponentTimerBar').style.width = progress + '%';
-      }
-      
-      // Debug logging every 2 seconds
-      if (timeLeft % 2000 < TIMER_UPDATE_INTERVAL) {
-        console.log("Timer update:", {
-          timeLeft,
-          opponentTimeLeft,
-          isTimerActive,
-          isOpponentTimerActive,
-          hasInterval: !!timerInterval
-        });
-      }
-    }
-    
-    function autoCommit() {
-      console.log("Auto-committing cards");
-      
-      // Auto-place remaining cards in order: top row first, then middle, then bottom
-      const remainingCards = myHand.slice();
-      const autoPlacements = [...staged.placements];
-      
-      // Fill top row (3 slots)
-      const topSlots = 3 - (myBoard.top.length + getStagedByRow('top').length);
-      for (let i = 0; i < topSlots && remainingCards.length > 0; i++) {
-        autoPlacements.push({ row: "top", card: remainingCards.shift() });
-      }
-      
-      // Fill middle row (5 slots)
-      const middleSlots = 5 - (myBoard.middle.length + getStagedByRow('middle').length);
-      for (let i = 0; i < middleSlots && remainingCards.length > 0; i++) {
-        autoPlacements.push({ row: "middle", card: remainingCards.shift() });
-      }
-      
-      // Fill bottom row (5 slots)
-      const bottomSlots = 5 - (myBoard.bottom.length + getStagedByRow('bottom').length);
-      for (let i = 0; i < bottomSlots && remainingCards.length > 0; i++) {
-        autoPlacements.push({ row: "bottom", card: remainingCards.shift() });
-      }
-      
-      // Find leftover card (if any)
-      const leftover = remainingCards.length > 0 ? remainingCards[0] : null;
-      
-      // Commit the auto-placements
-      socket.emit("action:ready", {
-        roomId,
-        placements: autoPlacements,
-        discard: leftover,
-        userId: myUserId
-      });
-      
-      // Optimistic commit
-      for (const p of autoPlacements) myBoard[p.row].push(p.card);
-      if (leftover) myDiscards.push(leftover);
-      
-      // Clear hand and reset staging
-      myHand = [];
-      staged = { placements: [], discard: null };
-      lastBatch = [];
-      
-      renderHand();
-      refreshBoard();
-      stopTimer();
-    }
+
 
     function cardEl(code, isNew=false){
       const rank = code.slice(0,-1), suit = code.slice(-1);
@@ -434,9 +350,6 @@
     userId: myUserId
   });
 
-  // Stop my timer when I commit
-  stopMyTimer();
-
   // optimistic commit
   for (const p of staged.placements) myBoard[p.row].push(p.card);
   if (staged.discard) myDiscards.push(staged.discard);
@@ -526,40 +439,21 @@
       console.log("Round start:", round);
       myBoard={top:[],middle:[],bottom:[]}; myDiscards=[]; staged={placements:[],discard:null}; lastBatch=[];
       $('revealPanel').textContent='—'; renderHand(); refreshBoard(); log("START round "+round);
-      // Reset timer state for new round
-      stopTimer();
     });
     socket.on("round:deal", ({cards})=>{
       lastBatch = cards.slice(); myHand = myHand.concat(cards); renderHand(); $('ready').disabled=!canSet(); log("DEAL "+JSON.stringify(cards));
-      // Start timer when new cards are dealt (for any round)
-      if (cards.length > 0) {
-        startTimer();
-      }
-      // remove "new" glow after a moment
     });
     socket.on("round:reveal", (payload)=>{
       log("REVEAL\n"+JSON.stringify(payload,null,2));
       if (myUserId) renderRevealPanel(myUserId, payload);
       // reset staged so next hand starts clean
       staged={placements:[],discard:null}; $('ready').disabled=true;
-      // Stop timer when round is revealed
-      stopTimer();
     });
-    socket.on("action:ready", (data)=>{
-      console.log("Action ready received:", data);
-      // Stop the timer for the player who clicked ready
-      const committingPlayerId = data?.userId;
-      
-      if (committingPlayerId === myUserId) {
-        // I clicked ready - stop my timer
-        console.log("I clicked ready - stopping my timer");
-        stopMyTimer();
-      } else {
-        // Opponent clicked ready - stop opponent's timer
-        console.log("Opponent clicked ready - stopping opponent timer");
-        stopOpponentTimer();
-      }
-    });
+
+    // Timer events
+    socket.on("timer:start", handleTimerStart);
+    socket.on("timer:update", handleTimerUpdate);
+    socket.on("timer:stop", handleTimerStop);
     socket.on("error:msg", (e)=> log("ERROR "+e.message));
   </script>
 </body>

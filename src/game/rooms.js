@@ -2,7 +2,7 @@
 import { id } from "../utils/ids.js";
 import { mem } from "../store/mem.js";
 import rules from "./rules.js";
-import { createRoom, startRound, dealToAll, allReady } from "./state.js";
+import { createRoom, startRound, dealToAll, allReady, startTimer, stopTimer, autoCommitPlayer } from "./state.js";
 import { Events } from "../net/events.js";
 import { validateBoard, settlePairwiseDetailed } from "./scoring.js";
 
@@ -55,6 +55,123 @@ export function leaveRoomHandler(io, socket, { roomId }) {
   }
 }
 
+// Timer timeout handler - auto-commit unready players
+function handleTimerTimeout(room, io) {
+  console.log(`Timer expired for room ${room.id}, auto-committing unready players`);
+  
+  const unreadyPlayers = [...room.players.values()].filter(p => !p.ready);
+  
+  for (const player of unreadyPlayers) {
+    const result = autoCommitPlayer(room, player);
+    console.log(`Auto-committed player ${player.userId}:`, result);
+    
+    // Notify the player about auto-commit
+    io.to(player.socketId).emit(Events.ACTION_APPLIED, {
+      placements: result.autoPlacements,
+      discard: result.discards.length > 0 ? result.discards[0] : null,
+      board: player.board,
+      hand: player.hand,
+      discards: player.discards,
+      autoCommitted: true
+    });
+  }
+  
+  // Check if all players are now ready
+  if (allReady(room)) {
+    handleAllPlayersReady(room, io);
+  } else {
+    // Start timer again for remaining unready players
+    startTimer(room, io, handleTimerTimeout);
+  }
+}
+
+// Handle when all players are ready
+function handleAllPlayersReady(room, io) {
+  // Stop the timer
+  stopTimer(room);
+  
+  // reset ready flags for next step
+  for (const pl of room.players.values()) pl.ready = false;
+
+  // More pineapple rounds to go?
+  if (room.roundIndex < rules.deal.rounds) {
+    dealToAll(room, rules.deal.cardsPerRound);
+    room.phase = "round";
+    for (const pl of room.players.values()) {
+      const newly = pl.hand.slice(-rules.deal.cardsPerRound);
+      pl.currentDeal = newly;
+      io.to(pl.socketId).emit(Events.DEAL_BATCH, { cards: newly });
+    }
+    room.roundIndex += 1;
+    
+    // Start timer for the new round
+    startTimer(room, io, handleTimerTimeout);
+    
+    emitRoomState(io, room.id);
+    return;
+  }
+
+  // Reveal & score
+  room.phase = "reveal";
+  const playersArr = [...room.players.values()];
+
+  // Public boards summary (with foul reason if any)
+  const boards = playersArr.map(pl => {
+    const v = validateBoard(pl.board);
+    return {
+      userId: pl.userId,
+      name: pl.name,
+      board: pl.board,
+      valid: !v.fouled,
+      reason: v.fouled ? v.reason : null
+    };
+  });
+
+  // Pairwise detailed settle
+  const totals = {};
+  const pairwise = [];
+  for (let i = 0; i < playersArr.length; i++) {
+    for (let j = i + 1; j < playersArr.length; j++) {
+      const A = playersArr[i], B = playersArr[j];
+      const det = settlePairwiseDetailed(A.board, B.board);
+      pairwise.push({
+        aUserId: A.userId,
+        bUserId: B.userId,
+        a: det.a,
+        b: det.b
+      });
+
+      if (playersArr.length === 2) {
+        // Difference-based scoring: compute gross points for each, then use the difference
+        const grossA = Math.max(det.a.lines.top, 0) + Math.max(det.a.lines.middle, 0) + Math.max(det.a.lines.bottom, 0)
+          + (det.a.scoop > 0 ? det.a.scoop : 0) + det.a.royalties;
+        const grossB = Math.max(det.b.lines.top, 0) + Math.max(det.b.lines.middle, 0) + Math.max(det.b.lines.bottom, 0)
+          + (det.b.scoop > 0 ? det.b.scoop : 0) + det.b.royalties;
+        const diff = grossA - grossB;
+        totals[A.userId] = (totals[A.userId] || 0) + diff;
+        totals[B.userId] = (totals[B.userId] || 0) - diff;
+      } else {
+        // Multi-player: sum zero-sum pairwise totals
+        totals[A.userId] = (totals[A.userId] || 0) + det.a.total;
+        totals[B.userId] = (totals[B.userId] || 0) + det.b.total;
+      }
+    }
+  }
+
+  // Update cumulative scores
+  for (const pl of room.players.values()) {
+    const delta = totals[pl.userId] || 0;
+    pl.score = (pl.score || 0) + delta;
+  }
+
+  io.to(room.id).emit(Events.REVEAL, {
+    boards,
+    results: totals,      // per-hand delta
+    pairwise,             // detailed per-pair breakdown
+    round: room.round
+  });
+}
+
 /** Start a new hand/round: deal initial 5 to each player (same cards to everyone) */
 export function startRoundHandler(io, socket, { roomId }) {
   const room = mem.rooms.get(roomId);
@@ -73,6 +190,9 @@ export function startRoundHandler(io, socket, { roomId }) {
     p.currentDeal = slice;
     io.to(p.socketId).emit(Events.DEAL_BATCH, { cards: slice });
   }
+
+  // Start timer for initial set phase
+  startTimer(room, io, handleTimerTimeout);
 
   emitRoomState(io, roomId);
 }
@@ -144,84 +264,7 @@ export function readyHandler(io, socket, { roomId, placements = [], discard = nu
   p.ready = true;
 
   if (allReady(room)) {
-    // reset ready flags for next step
-    for (const pl of room.players.values()) pl.ready = false;
-
-    // More pineapple rounds to go?
-    if (room.roundIndex < rules.deal.rounds) {
-      dealToAll(room, rules.deal.cardsPerRound);
-      room.phase = "round";
-      for (const pl of room.players.values()) {
-        const newly = pl.hand.slice(-rules.deal.cardsPerRound);
-        pl.currentDeal = newly;
-        io.to(pl.socketId).emit(Events.DEAL_BATCH, { cards: newly });
-      }
-      room.roundIndex += 1;
-      emitRoomState(io, room.id);
-      return;
-    }
-
-    // Reveal & score
-    room.phase = "reveal";
-    const playersArr = [...room.players.values()];
-
-    // Public boards summary (with foul reason if any)
-    const boards = playersArr.map(pl => {
-      const v = validateBoard(pl.board);
-      return {
-        userId: pl.userId,
-        name: pl.name,
-        board: pl.board,
-        valid: !v.fouled,
-        reason: v.fouled ? v.reason : null
-      };
-    });
-
-    // Pairwise detailed settle
-    const totals = {};
-    const pairwise = [];
-    for (let i = 0; i < playersArr.length; i++) {
-      for (let j = i + 1; j < playersArr.length; j++) {
-        const A = playersArr[i], B = playersArr[j];
-        const det = settlePairwiseDetailed(A.board, B.board);
-        pairwise.push({
-          aUserId: A.userId,
-          bUserId: B.userId,
-          a: det.a,
-          b: det.b
-        });
-
-        if (playersArr.length === 2) {
-          // Difference-based scoring: compute gross points for each, then use the difference
-          const grossA = Math.max(det.a.lines.top, 0) + Math.max(det.a.lines.middle, 0) + Math.max(det.a.lines.bottom, 0)
-            + (det.a.scoop > 0 ? det.a.scoop : 0) + det.a.royalties;
-          const grossB = Math.max(det.b.lines.top, 0) + Math.max(det.b.lines.middle, 0) + Math.max(det.b.lines.bottom, 0)
-            + (det.b.scoop > 0 ? det.b.scoop : 0) + det.b.royalties;
-          const diff = grossA - grossB;
-          totals[A.userId] = (totals[A.userId] || 0) + diff;
-          totals[B.userId] = (totals[B.userId] || 0) - diff;
-        } else {
-          // Multi-player: sum zero-sum pairwise totals
-          totals[A.userId] = (totals[A.userId] || 0) + det.a.total;
-          totals[B.userId] = (totals[B.userId] || 0) + det.b.total;
-        }
-      }
-    }
-
-    // Update cumulative scores
-    for (const pl of room.players.values()) {
-      const delta = totals[pl.userId] || 0;
-      pl.score = (pl.score || 0) + delta;
-    }
-
-    io.to(room.id).emit(Events.REVEAL, {
-      boards,
-      results: totals,      // per-hand delta
-      pairwise,             // detailed per-pair breakdown
-      round: room.round
-    });
-
-    emitRoomState(io, room.id);
+    handleAllPlayersReady(room, io);
   } else {
     emitRoomState(io, roomId);
   }

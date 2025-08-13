@@ -1,5 +1,10 @@
 import rules from "./rules.js";
 import { makeDeck, shuffleDeterministic } from "./deck.js";
+import { Events } from "../net/events.js";
+
+// Timer constants
+const ROUND_TIMER_DURATION = 15000; // 15 seconds in milliseconds
+const TIMER_UPDATE_INTERVAL = 100; // 100ms for smooth updates
 
 export function createRoom(roomId) {
   return {
@@ -9,7 +14,14 @@ export function createRoom(roomId) {
     seed: null,
     phase: "lobby", // lobby | initial-set | round | reveal
     sharedDeck: [],
-    roundIndex: 0
+    roundIndex: 0,
+    // Timer state
+    timer: {
+      isActive: false,
+      timeLeft: ROUND_TIMER_DURATION,
+      intervalId: null,
+      startTime: null
+    }
   };
 }
 
@@ -39,4 +51,90 @@ export function dealToAll(room, nCards) {
 
 export function allReady(room) {
   return [...room.players.values()].every(p => p.ready);
+}
+
+// Timer management functions
+export function startTimer(room, io, onTimeout) {
+  // Clear any existing timer
+  stopTimer(room);
+  
+  room.timer.isActive = true;
+  room.timer.timeLeft = ROUND_TIMER_DURATION;
+  room.timer.startTime = Date.now();
+  
+  // Start the countdown interval
+  room.timer.intervalId = setInterval(() => {
+    room.timer.timeLeft -= TIMER_UPDATE_INTERVAL;
+    
+    // Broadcast timer update to all players in the room
+    io.to(room.id).emit(Events.TIMER_UPDATE, {
+      timeLeft: room.timer.timeLeft,
+      isActive: room.timer.isActive
+    });
+    
+    // Check if timer expired
+    if (room.timer.timeLeft <= 0) {
+      stopTimer(room);
+      onTimeout(room, io);
+    }
+  }, TIMER_UPDATE_INTERVAL);
+  
+  // Send initial timer start event
+  io.to(room.id).emit(Events.TIMER_START, {
+    timeLeft: ROUND_TIMER_DURATION,
+    isActive: true
+  });
+}
+
+export function stopTimer(room) {
+  if (room.timer.intervalId) {
+    clearInterval(room.timer.intervalId);
+    room.timer.intervalId = null;
+  }
+  room.timer.isActive = false;
+  
+  // Send timer stop event
+  if (room.io) {
+    room.io.to(room.id).emit(Events.TIMER_STOP);
+  }
+}
+
+export function autoCommitPlayer(room, player) {
+  // Auto-place remaining cards in order: top row first, then middle, then bottom
+  const remainingCards = player.hand.slice();
+  const autoPlacements = [];
+  
+  // Fill top row (3 slots)
+  const topSlots = 3 - player.board.top.length;
+  for (let i = 0; i < topSlots && remainingCards.length > 0; i++) {
+    autoPlacements.push({ row: "top", card: remainingCards.shift() });
+  }
+  
+  // Fill middle row (5 slots)
+  const middleSlots = 5 - player.board.middle.length;
+  for (let i = 0; i < middleSlots && remainingCards.length > 0; i++) {
+    autoPlacements.push({ row: "middle", card: remainingCards.shift() });
+  }
+  
+  // Fill bottom row (5 slots)
+  const bottomSlots = 5 - player.board.bottom.length;
+  for (let i = 0; i < bottomSlots && remainingCards.length > 0; i++) {
+    autoPlacements.push({ row: "bottom", card: remainingCards.shift() });
+  }
+  
+  // Apply auto-placements
+  for (const placement of autoPlacements) {
+    player.board[placement.row].push(placement.card);
+  }
+  
+  // Add any remaining cards to discards
+  if (remainingCards.length > 0) {
+    player.discards.push(...remainingCards);
+  }
+  
+  // Clear hand and mark as ready
+  player.hand = [];
+  player.ready = true;
+  
+  return { autoPlacements, discards: remainingCards };
 }
