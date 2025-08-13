@@ -8,7 +8,7 @@ import { validateBoard, settlePairwiseDetailed } from "./scoring.js";
 
 /** Create a new room and return its id to the creator */
 export function createRoomHandler(io, socket) {
-  const roomId = id(6);
+  const roomId = id(4);
   const room = createRoom(roomId);
   mem.rooms.set(roomId, room);
   socket.emit(Events.CREATE_ROOM, { roomId });
@@ -95,7 +95,7 @@ function handleTimerTimeout(room, io) {
 // Handle when all players are ready
 function handleAllPlayersReady(room, io) {
   // Stop the timer
-  stopTimer(room);
+  stopTimer(room, io);
   
   // reset ready flags for next step
   for (const pl of room.players.values()) pl.ready = false;
@@ -120,6 +120,9 @@ function handleAllPlayersReady(room, io) {
 
   // Reveal & score
   room.phase = "reveal";
+  
+  // Stop the timer when reveal phase begins
+  stopTimer(room, io);
   const playersArr = [...room.players.values()];
 
   // Public boards summary (with foul reason if any)

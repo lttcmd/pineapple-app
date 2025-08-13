@@ -142,7 +142,33 @@ export const useGame = create((set, get) => ({
       }
 
       case "action:applied": {
-        // Server-confirmed commit: ensure discard is removed from hand and sync discards
+        // Handle auto-commit punishment
+        if (data?.autoCommitted) {
+          console.log("🎯 Mobile auto-commit: updating state with server data");
+          console.log("Server board data:", data.board);
+          console.log("Server hand data:", data.hand);
+          console.log("Server discards data:", data.discards);
+          
+          // Ensure we have valid board data from server
+          const serverBoard = data.board || { top: [], middle: [], bottom: [] };
+          const serverHand = Array.isArray(data.hand) ? data.hand : [];
+          const serverDiscards = Array.isArray(data.discards) ? data.discards : s.discards;
+          
+          return {
+            ...s,
+            board: {
+              top: Array.isArray(serverBoard.top) ? serverBoard.top : [],
+              middle: Array.isArray(serverBoard.middle) ? serverBoard.middle : [],
+              bottom: Array.isArray(serverBoard.bottom) ? serverBoard.bottom : [],
+            },
+            hand: serverHand,
+            discards: serverDiscards,
+            staged: { placements: [], discard: null },
+            currentDeal: [],
+          };
+        }
+        
+        // Normal server-confirmed commit: ensure discard is removed from hand and sync discards
         const discard = data?.discard ?? null;
         const committedSet = new Set([...s.board.top, ...s.board.middle, ...s.board.bottom]);
         const nextHand = s.hand

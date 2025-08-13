@@ -62,7 +62,7 @@ npx expo build:ios --type archive
 🔄 Switching Between Local and Online
 For Online Testing:
 
-Backend: DigitalOcean (https://lionfish-app-b4g2i.ondigitalocean.app)
+Backend: DigitalOcean (https://seal-app-hikwk.ondigitalocean.app/)
 
 in\Mobile: npx expo start --tunnel
 
@@ -74,3 +74,7 @@ For Local Testing:
 Backend: run npm start from root. 
 
 \Mobile: npx expo start " export const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL || "http://192.168.1.78:3000"; "
+
+node monitor-server.js > let me look at all active rooms
+
+node view-room.js ROOMID lets me look at the room specifically.    

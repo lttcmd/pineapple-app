@@ -455,7 +455,14 @@
       console.log("Action applied received:", data);
       
       if (data.autoCommitted) {
-        console.log("Auto-commit detected, updating local state");
+        console.log("🎯 AUTO-COMMIT PUNISHMENT DETECTED!");
+        console.log("Previous state:", {
+          hand: myHand,
+          board: myBoard,
+          discards: myDiscards,
+          staged: staged
+        });
+        
         // Update local state with auto-committed cards
         myBoard = data.board;
         myHand = data.hand;
@@ -465,11 +472,29 @@
         staged = { placements: [], discard: null };
         lastBatch = [];
         
+        console.log("New state after auto-commit:", {
+          hand: myHand,
+          board: myBoard,
+          discards: myDiscards,
+          staged: staged
+        });
+        
         // Update UI
         renderHand();
         refreshBoard();
         
-        log("Cards auto-committed due to timeout");
+        // Add visual feedback
+        log("⏰ TIMEOUT PUNISHMENT: Cards auto-committed!");
+        log(`Board updated: Top(${myBoard.top.length}), Middle(${myBoard.middle.length}), Bottom(${myBoard.bottom.length})`);
+        if (myDiscards.length > 0) {
+          log(`Discarded: ${myDiscards.join(', ')}`);
+        }
+        
+        // Add visual flash effect to show auto-commit happened
+        document.body.style.backgroundColor = '#ff4444';
+        setTimeout(() => {
+          document.body.style.backgroundColor = '';
+        }, 500);
       }
     });
 

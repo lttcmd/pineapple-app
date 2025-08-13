@@ -4,7 +4,7 @@ import { Events } from "../net/events.js";
 
 // Timer constants
 const ROUND_TIMER_DURATION = 15000; // 15 seconds in milliseconds
-const TIMER_UPDATE_INTERVAL = 100; // 100ms for smooth updates
+const TIMER_UPDATE_INTERVAL = 16; // 16ms for 60fps smooth animation
 
 export function createRoom(roomId) {
   return {
@@ -56,7 +56,7 @@ export function allReady(room) {
 // Timer management functions
 export function startTimer(room, io, onTimeout) {
   // Clear any existing timer
-  stopTimer(room);
+  stopTimer(room, io);
   
   room.timer.isActive = true;
   room.timer.timeLeft = ROUND_TIMER_DURATION;
@@ -74,7 +74,7 @@ export function startTimer(room, io, onTimeout) {
     
     // Check if timer expired
     if (room.timer.timeLeft <= 0) {
-      stopTimer(room);
+      stopTimer(room, io);
       onTimeout(room, io);
     }
   }, TIMER_UPDATE_INTERVAL);
@@ -86,7 +86,7 @@ export function startTimer(room, io, onTimeout) {
   });
 }
 
-export function stopTimer(room) {
+export function stopTimer(room, io) {
   if (room.timer.intervalId) {
     clearInterval(room.timer.intervalId);
     room.timer.intervalId = null;
@@ -94,62 +94,74 @@ export function stopTimer(room) {
   room.timer.isActive = false;
   
   // Send timer stop event
-  if (room.io) {
-    room.io.to(room.id).emit(Events.TIMER_STOP);
+  if (io) {
+    io.to(room.id).emit(Events.TIMER_STOP);
   }
 }
 
 export function autoCommitPlayer(room, player) {
-  console.log(`Auto-committing player ${player.userId} in phase ${room.phase}`);
-  console.log(`Player hand before auto-commit:`, player.hand);
-  console.log(`Player board before auto-commit:`, player.board);
-  console.log(`Player currentDeal:`, player.currentDeal);
+  console.log(`=== AUTO-COMMIT PUNISHMENT FOR PLAYER ${player.userId} ===`);
+  console.log(`Phase: ${room.phase}, RoundIndex: ${room.roundIndex}`);
+  console.log(`Hand before:`, player.hand);
+  console.log(`Board before:`, player.board);
+  console.log(`CurrentDeal:`, player.currentDeal);
+  console.log(`Discards before:`, player.discards);
   
   const isInitial = room.phase === "initial-set";
   const autoPlacements = [];
   const discards = [];
   
   if (isInitial) {
-    // Initial set: place all 5 cards from currentDeal
-    console.log(`Initial set phase - placing all 5 cards`);
+    // Initial set: place all 5 cards from currentDeal as punishment
+    console.log(`🎯 INITIAL SET PUNISHMENT: Placing all 5 cards automatically`);
     const cardsToPlace = player.currentDeal.slice();
+    console.log(`Cards to place:`, cardsToPlace);
     
     // Place cards in order: top (3 slots), middle (5 slots), bottom (5 slots)
     for (const card of cardsToPlace) {
       if (player.board.top.length < 3) {
+        console.log(`Placing ${card} in TOP row`);
         autoPlacements.push({ row: "top", card });
         player.board.top.push(card);
       } else if (player.board.middle.length < 5) {
+        console.log(`Placing ${card} in MIDDLE row`);
         autoPlacements.push({ row: "middle", card });
         player.board.middle.push(card);
       } else if (player.board.bottom.length < 5) {
+        console.log(`Placing ${card} in BOTTOM row`);
         autoPlacements.push({ row: "bottom", card });
         player.board.bottom.push(card);
       } else {
         // All rows are full, discard the card
+        console.log(`All rows full, discarding ${card}`);
         discards.push(card);
         player.discards.push(card);
       }
     }
   } else {
-    // Pineapple round: place 2 cards, discard 1 from currentDeal
-    console.log(`Pineapple round - placing 2 cards, discarding 1`);
+    // Pineapple round: place 2 cards, discard 1 from currentDeal as punishment
+    console.log(`🎯 PINEAPPLE ROUND PUNISHMENT: Placing 2 cards, discarding 1`);
     const cardsToProcess = player.currentDeal.slice();
+    console.log(`Cards to process:`, cardsToProcess);
     
     // Place first 2 cards in order: top, middle, bottom
     for (let i = 0; i < 2 && cardsToProcess.length > 0; i++) {
       const card = cardsToProcess.shift();
       if (player.board.top.length < 3) {
+        console.log(`Placing ${card} in TOP row`);
         autoPlacements.push({ row: "top", card });
         player.board.top.push(card);
       } else if (player.board.middle.length < 5) {
+        console.log(`Placing ${card} in MIDDLE row`);
         autoPlacements.push({ row: "middle", card });
         player.board.middle.push(card);
       } else if (player.board.bottom.length < 5) {
+        console.log(`Placing ${card} in BOTTOM row`);
         autoPlacements.push({ row: "bottom", card });
         player.board.bottom.push(card);
       } else {
         // All rows are full, discard the card
+        console.log(`All rows full, discarding ${card}`);
         discards.push(card);
         player.discards.push(card);
       }
@@ -158,20 +170,26 @@ export function autoCommitPlayer(room, player) {
     // Discard the remaining card
     if (cardsToProcess.length > 0) {
       const cardToDiscard = cardsToProcess[0];
+      console.log(`Discarding remaining card: ${cardToDiscard}`);
       discards.push(cardToDiscard);
       player.discards.push(cardToDiscard);
     }
   }
   
-  // Clear hand and currentDeal, mark as ready
+  // Clear hand and currentDeal, mark as ready (punishment complete)
+  console.log(`Clearing hand and currentDeal, marking as ready`);
   player.hand = [];
   player.currentDeal = [];
   player.ready = true;
   
-  console.log(`Auto-commit result:`, { autoPlacements, discards });
-  console.log(`Player board after auto-commit:`, player.board);
-  console.log(`Player hand after auto-commit:`, player.hand);
-  console.log(`Player ready status:`, player.ready);
+  console.log(`=== AUTO-COMMIT RESULT ===`);
+  console.log(`Auto-placements:`, autoPlacements);
+  console.log(`Discards:`, discards);
+  console.log(`Board after:`, player.board);
+  console.log(`Hand after:`, player.hand);
+  console.log(`Discards after:`, player.discards);
+  console.log(`Ready status:`, player.ready);
+  console.log(`=== END AUTO-COMMIT ===`);
   
   return { autoPlacements, discards };
 }

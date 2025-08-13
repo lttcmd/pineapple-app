@@ -151,14 +151,14 @@ export function settlePairwise(aBoard, bBoard) {
   // Both foul
   if (av.fouled && bv.fouled) return 0;
 
-  // One fouls: fouler pays, non-fouler keeps royalties
+  // One fouls: fouler pays, non-fouler keeps royalties and gets scoop bonus
   if (av.fouled && !bv.fouled) {
     const bRoy = totalRoyalties(bBoard);
-    return -foulPenalty + bRoy;
+    return -(foulPenalty + scoopBonus) + bRoy;
   }
   if (!av.fouled && bv.fouled) {
     const aRoy = totalRoyalties(aBoard);
-    return foulPenalty + aRoy;
+    return +(foulPenalty + scoopBonus) + aRoy;
   }
 
   // Neither foul: compare rows
@@ -202,7 +202,7 @@ export function settlePairwiseDetailed(aBoard, bBoard) {
   // Both foul → 0
   if (av.fouled && bv.fouled) return detail;
 
-  // One fouls: fouler pays, non-fouler keeps royalties
+  // One fouls: fouler pays, non-fouler keeps royalties AND gets scoop bonus
   if (av.fouled && !bv.fouled) {
     const bRoyTop = royaltiesTop(bBoard.top);
     const bRoyMid = royaltiesFive(bBoard.middle, "middle");
@@ -210,8 +210,9 @@ export function settlePairwiseDetailed(aBoard, bBoard) {
     const bRoy = bRoyTop + bRoyMid + bRoyBot;
     detail.b.royalties = bRoy;
     detail.b.royaltiesBreakdown = { top: bRoyTop, middle: bRoyMid, bottom: bRoyBot };
-    detail.a.total = -foulPenalty + 0;      // A pays
-    detail.b.total = +foulPenalty + bRoy;   // B gets penalty + royalties
+    detail.b.scoop = +scoopBonus; // award scoop for non-fouler
+    detail.a.total = -(foulPenalty + scoopBonus) + 0;      // A pays penalty + scoop
+    detail.b.total = +(foulPenalty + scoopBonus) + bRoy;   // B gets penalty + scoop + royalties
     return detail;
   }
   if (!av.fouled && bv.fouled) {
@@ -221,8 +222,9 @@ export function settlePairwiseDetailed(aBoard, bBoard) {
     const aRoy = aRoyTop + aRoyMid + aRoyBot;
     detail.a.royalties = aRoy;
     detail.a.royaltiesBreakdown = { top: aRoyTop, middle: aRoyMid, bottom: aRoyBot };
-    detail.a.total = +foulPenalty + aRoy;
-    detail.b.total = -foulPenalty + 0;
+    detail.a.scoop = +scoopBonus; // award scoop for non-fouler
+    detail.a.total = +(foulPenalty + scoopBonus) + aRoy;
+    detail.b.total = -(foulPenalty + scoopBonus) + 0;
     return detail;
   }
 

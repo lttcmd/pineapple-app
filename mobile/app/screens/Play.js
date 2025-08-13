@@ -22,6 +22,21 @@ const TIMER_DURATION = 15; // 15 seconds
 const TIMER_HEIGHT = 4; // height of the timer bar
 const TIMER_UPDATE_INTERVAL = 16; // 16ms for 60fps smooth animation
 
+// Foul effect - generate random transformations for "broken" cards
+function getFoulTransform(index) {
+  const seed = index * 7 + 13; // Simple deterministic randomness
+  const rotation = (seed % 21 - 10) * 2; // -20 to +20 degrees
+  const offsetX = (seed % 7 - 3) * 2; // -6 to +6 pixels
+  const offsetY = (seed % 5 - 2) * 2; // -4 to +4 pixels
+  return {
+    transform: [
+      { rotate: `${rotation}deg` },
+      { translateX: offsetX },
+      { translateY: offsetY }
+    ]
+  };
+}
+
 function NameWithScore({ name, score, delta }) {
   const deltaText = typeof delta === 'number' ? (delta >= 0 ? `+${delta}` : `${delta}`) : null;
   const deltaColor = deltaText && deltaText.startsWith('+') ? colors.ok || '#2e7d32' : '#C62828';
@@ -35,28 +50,31 @@ function NameWithScore({ name, score, delta }) {
   );
 }
 
-function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onMidLayout, onBotLayout, topAnchorRef, midAnchorRef, botAnchorRef }) {
+function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onMidLayout, onBotLayout, topAnchorRef, midAnchorRef, botAnchorRef, isFouled }) {
   const tiny = true;
-  const capRow = (ref, onLayout, anchorRef, cards, cap) => (
+  const capRow = (ref, onLayout, anchorRef, cards, cap, rowOffset = 0) => (
     <View ref={ref} onLayout={onLayout} style={{ flexDirection: "row", alignSelf: "center", marginBottom: 2, position: 'relative' }}>
       {/* top-right anchor marker inside the row */}
       <View ref={anchorRef} pointerEvents="none" style={{ position: 'absolute', top: 0, right: 0, width: 1, height: 1 }} />
-      {Array.from({ length: cap }).map((_, i) => (
-        <View key={"opp_"+i} style={{ marginRight: 3 }}>
-          {hidden ? (
-            <View style={{ width: 40, height: 56, borderRadius: 8, borderWidth: 2, borderColor: colors.outline, backgroundColor: colors.panel2 }} />
-          ) : (
-            cards[i] ? <Card card={cards[i]} tiny noMargin /> : <View style={{ width: 40, height: 56 }} />
-          )}
-        </View>
-      ))}
+      {Array.from({ length: cap }).map((_, i) => {
+        const foulStyle = isFouled ? getFoulTransform(rowOffset + i) : {};
+        return (
+          <View key={"opp_"+i} style={[{ marginRight: 3 }, foulStyle]}>
+            {hidden ? (
+              <View style={{ width: 40, height: 56, borderRadius: 8, borderWidth: 2, borderColor: colors.outline, backgroundColor: colors.panel2 }} />
+            ) : (
+              cards[i] ? <Card card={cards[i]} tiny noMargin /> : <View style={{ width: 40, height: 56 }} />
+            )}
+          </View>
+        );
+      })}
     </View>
   );
   return (
     <View style={{ paddingVertical: 4 }}>
-      {capRow(topRef, onTopLayout, topAnchorRef, board.top || [], 3)}
-      {capRow(midRef, onMidLayout, midAnchorRef, board.middle || [], 5)}
-      {capRow(botRef, onBotLayout, botAnchorRef, board.bottom || [], 5)}
+      {capRow(topRef, onTopLayout, topAnchorRef, board.top || [], 3, 0)}
+      {capRow(midRef, onMidLayout, midAnchorRef, board.middle || [], 5, 3)}
+      {capRow(botRef, onBotLayout, botAnchorRef, board.bottom || [], 5, 8)}
       
 
     </View>
@@ -117,12 +135,17 @@ export default function Play({ route }) {
     discards,
   } = useGame();
 
+
+
   const { drag } = useDrag();
 
-  // Timer state - just display server timer
+  // Timer state - smooth client-side animation
   const [serverTimeLeft, setServerTimeLeft] = useState(TIMER_DURATION * 1000);
+  const [smoothTimeLeft, setSmoothTimeLeft] = useState(TIMER_DURATION * 1000);
   const [isTimerActive, setIsTimerActive] = useState(false);
   const [readyPlayers, setReadyPlayers] = useState(new Set());
+  const [showAutoCommitFlash, setShowAutoCommitFlash] = useState(false);
+  const [forceUpdate, setForceUpdate] = useState(0);
 
   // measure rows for hover/drop (player)
   const topRef = useRef(null), midRef = useRef(null), botRef = useRef(null);
@@ -152,18 +175,41 @@ export default function Play({ route }) {
   const onOMidLayout = () => measureAnchor(oMidAnchorRef, 'middle', setOppAnchors);
   const onOBotLayout = () => measureAnchor(oBotAnchorRef, 'bottom', setOppAnchors);
 
+  // Smooth timer animation at 60fps
+  useEffect(() => {
+    if (!isTimerActive) return;
+    
+    const interval = setInterval(() => {
+      setSmoothTimeLeft(prev => {
+        const newTime = prev - 16; // 16ms = 60fps
+        return Math.max(0, newTime);
+      });
+    }, 16);
+    
+    return () => clearInterval(interval);
+  }, [isTimerActive]);
+
+  // Sync smooth timer with server timer
+  useEffect(() => {
+    setSmoothTimeLeft(serverTimeLeft);
+  }, [serverTimeLeft]);
+
   useEffect(() => {
     const off = onSocketEvent((evt, data) => {
+      
       if (evt === "round:start") {
         playSfx('roundstart');
+        // Clear previous reveal/score UI when a new round begins
+        setShowScore(false);
+        setScoreDetail(null);
       }
       if (evt === 'round:reveal') {
         const meId = useGame.getState().userId;
         const pair = data?.pairwise?.find(p => p.aUserId === meId || p.bUserId === meId);
         if (pair) {
-          setScoreDetail({ a: pair.aUserId === meId ? pair.a : pair.b, b: pair.aUserId === meId ? pair.b : pair.a });
-          setShowScore(true);
-          setTimeout(() => setShowScore(false), 10000);
+          const scoreDetail = { a: pair.aUserId === meId ? pair.a : pair.b, b: pair.aUserId === meId ? pair.b : pair.a };
+          setScoreDetail(scoreDetail);
+          setShowScore(true); // persist until next round
         }
       }
       if (evt === 'action:ready') {
@@ -176,6 +222,34 @@ export default function Play({ route }) {
           newSet.add(committingPlayerId);
           return newSet;
         });
+      }
+      if (evt === 'action:applied' && data?.autoCommitted) {
+        // Handle auto-commit punishment
+        console.log("🎯 AUTO-COMMIT PUNISHMENT DETECTED on mobile!");
+        console.log("Auto-commit data:", data);
+        
+        // The useGame state should handle the auto-commit automatically
+        // but we can add visual feedback here
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        
+        // Flash the screen red briefly to show punishment
+        setShowAutoCommitFlash(true);
+        setTimeout(() => setShowAutoCommitFlash(false), 500);
+        
+        // Force a re-render to ensure UI updates
+        setTimeout(() => {
+          setForceUpdate(prev => prev + 1);
+        }, 50);
+        
+        // Debug: Check state after auto-commit
+        setTimeout(() => {
+          const gameState = useGame.getState();
+          console.log("🎯 Mobile state after auto-commit:");
+          console.log("Board:", gameState.board);
+          console.log("Hand:", gameState.hand);
+          console.log("Discards:", gameState.discards);
+          console.log("Staged:", gameState.staged);
+        }, 100);
       }
       applyEvent(evt, data);
     });
@@ -317,6 +391,12 @@ export default function Play({ route }) {
     return () => off();
   }, []);
 
+  // Debug: Monitor board state changes
+  useEffect(() => {
+    console.log("🎯 Mobile board state changed:", board);
+    console.log("🎯 Force update count:", forceUpdate);
+  }, [board, forceUpdate]);
+
 
 
 
@@ -345,7 +425,10 @@ export default function Play({ route }) {
           topAnchorRef={oTopAnchorRef}
           midAnchorRef={oMidAnchorRef}
           botAnchorRef={oBotAnchorRef}
+          isFouled={showScore && scoreDetail?.b?.foul}
         />
+
+
       </View>
 
       {/* Player board and hand area */}
@@ -366,6 +449,8 @@ export default function Play({ route }) {
             onLayout={onTopLayout}
             compact
             anchorRef={topAnchorRef}
+            isFouled={showScore && scoreDetail?.a?.foul}
+            rowOffset={0}
           />
           <Row
             capacity={5}
@@ -378,6 +463,8 @@ export default function Play({ route }) {
             onLayout={onMidLayout}
             compact
             anchorRef={midAnchorRef}
+            isFouled={showScore && scoreDetail?.a?.foul}
+            rowOffset={3}
           />
           <Row
             capacity={5}
@@ -390,8 +477,12 @@ export default function Play({ route }) {
             onLayout={onBotLayout}
             compact
             anchorRef={botAnchorRef}
+            isFouled={showScore && scoreDetail?.a?.foul}
+            rowOffset={8}
           />
         </View>
+        
+
 
         <View style={{ paddingHorizontal: 6, marginTop: 12, height: HAND_HEIGHT, justifyContent: "center" }}>
           <FlatList
@@ -495,7 +586,7 @@ export default function Play({ route }) {
       </View>
 
       {/* Timer bar at the very bottom */}
-      {isTimerActive && (
+      {isTimerActive && !showScore && (
         <View style={{ 
           position: "absolute", 
           left: 0, 
@@ -510,7 +601,7 @@ export default function Play({ route }) {
             left: 0,
             top: 0,
             height: TIMER_HEIGHT,
-            width: `${(serverTimeLeft / (TIMER_DURATION * 1000)) * 100}%`,
+            width: `${(smoothTimeLeft / (TIMER_DURATION * 1000)) * 100}%`,
             backgroundColor: '#FFD700', // Yellow color
             borderRadius: 0
           }} />
@@ -519,6 +610,64 @@ export default function Play({ route }) {
 
       {/* Row score bubbles positioned at row corners */}
       <ScoreBubbles show={showScore} playerAnchors={playerAnchors} oppAnchors={oppAnchors} detail={scoreDetail} />
+      
+      {/* Auto-commit flash overlay */}
+      {showAutoCommitFlash && (
+        <View style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(255, 68, 68, 0.3)',
+          pointerEvents: 'none',
+        }} />
+      )}
+
+      {/* Scoop badges - absolutely positioned to not affect layout */}
+      {showScore && scoreDetail?.a?.scoop > 0 && (
+        <View style={{
+          position: 'absolute',
+          left: '50%',
+          top: '75%',
+          transform: [{ translateX: '-50%' }],
+          zIndex: 1000,
+          pointerEvents: 'none',
+        }}>
+          <View style={{ 
+            paddingVertical: 6, 
+            paddingHorizontal: 12, 
+            borderRadius: 8, 
+            borderWidth: 1, 
+            borderColor: colors.outline, 
+            backgroundColor: colors.panel2 
+          }}>
+            <Text style={{ color: colors.text, fontWeight: '700', fontSize: 14 }}>SCOOPED +3</Text>
+          </View>
+        </View>
+      )}
+
+      {showScore && scoreDetail?.b?.scoop > 0 && (
+        <View style={{
+          position: 'absolute',
+          left: '50%',
+          top: '32%',
+          transform: [{ translateX: '-50%' }],
+          zIndex: 1000,
+          pointerEvents: 'none',
+        }}>
+          <View style={{ 
+            paddingVertical: 4, 
+            paddingHorizontal: 8, 
+            borderRadius: 6, 
+            borderWidth: 1, 
+            borderColor: colors.outline, 
+            backgroundColor: colors.panel2 
+          }}>
+            <Text style={{ color: colors.text, fontWeight: '700', fontSize: 12 }}>SCOOPED +3</Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -534,6 +683,8 @@ function Row({
   onLayout,
   compact = false,
   anchorRef,
+  isFouled = false,
+  rowOffset = 0,
 }) {
   const committedCount = committed.length;
   const stagedCount = staged.length;
@@ -559,11 +710,14 @@ function Row({
       >
         {/* top-right anchor inside player row */}
         {anchorRef ? <View ref={anchorRef} pointerEvents="none" style={{ position: 'absolute', top: 0, right: 0, width: 1, height: 1 }} /> : null}
-        {committed.map((c, i) => (
-          <View key={"c_"+i} style={{ marginRight: gap }} pointerEvents="none">
-            <Card card={c} small noMargin />
-          </View>
-        ))}
+        {committed.map((c, i) => {
+          const foulStyle = isFouled ? getFoulTransform(rowOffset + i) : {};
+          return (
+            <View key={"c_"+i} style={[{ marginRight: gap }, foulStyle]} pointerEvents="none">
+              <Card card={c} small noMargin />
+            </View>
+          );
+        })}
         {staged.map((c, i) => (
           <View key={"s_"+i} style={{ marginRight: gap }} pointerEvents="box-none">
             <DraggableCard card={c} small onMove={onMove} onDrop={onDrop} />
