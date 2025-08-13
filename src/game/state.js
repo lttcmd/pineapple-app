@@ -103,50 +103,75 @@ export function autoCommitPlayer(room, player) {
   console.log(`Auto-committing player ${player.userId} in phase ${room.phase}`);
   console.log(`Player hand before auto-commit:`, player.hand);
   console.log(`Player board before auto-commit:`, player.board);
+  console.log(`Player currentDeal:`, player.currentDeal);
   
-  // Auto-place remaining cards in order: top row first, then middle, then bottom
-  const remainingCards = player.hand.slice();
+  const isInitial = room.phase === "initial-set";
   const autoPlacements = [];
+  const discards = [];
   
-  // Fill top row (3 slots)
-  const topSlots = 3 - player.board.top.length;
-  for (let i = 0; i < topSlots && remainingCards.length > 0; i++) {
-    autoPlacements.push({ row: "top", card: remainingCards.shift() });
+  if (isInitial) {
+    // Initial set: place all 5 cards from currentDeal
+    console.log(`Initial set phase - placing all 5 cards`);
+    const cardsToPlace = player.currentDeal.slice();
+    
+    // Place cards in order: top (3 slots), middle (5 slots), bottom (5 slots)
+    for (const card of cardsToPlace) {
+      if (player.board.top.length < 3) {
+        autoPlacements.push({ row: "top", card });
+        player.board.top.push(card);
+      } else if (player.board.middle.length < 5) {
+        autoPlacements.push({ row: "middle", card });
+        player.board.middle.push(card);
+      } else if (player.board.bottom.length < 5) {
+        autoPlacements.push({ row: "bottom", card });
+        player.board.bottom.push(card);
+      } else {
+        // All rows are full, discard the card
+        discards.push(card);
+        player.discards.push(card);
+      }
+    }
+  } else {
+    // Pineapple round: place 2 cards, discard 1 from currentDeal
+    console.log(`Pineapple round - placing 2 cards, discarding 1`);
+    const cardsToProcess = player.currentDeal.slice();
+    
+    // Place first 2 cards in order: top, middle, bottom
+    for (let i = 0; i < 2 && cardsToProcess.length > 0; i++) {
+      const card = cardsToProcess.shift();
+      if (player.board.top.length < 3) {
+        autoPlacements.push({ row: "top", card });
+        player.board.top.push(card);
+      } else if (player.board.middle.length < 5) {
+        autoPlacements.push({ row: "middle", card });
+        player.board.middle.push(card);
+      } else if (player.board.bottom.length < 5) {
+        autoPlacements.push({ row: "bottom", card });
+        player.board.bottom.push(card);
+      } else {
+        // All rows are full, discard the card
+        discards.push(card);
+        player.discards.push(card);
+      }
+    }
+    
+    // Discard the remaining card
+    if (cardsToProcess.length > 0) {
+      const cardToDiscard = cardsToProcess[0];
+      discards.push(cardToDiscard);
+      player.discards.push(cardToDiscard);
+    }
   }
   
-  // Fill middle row (5 slots)
-  const middleSlots = 5 - player.board.middle.length;
-  for (let i = 0; i < middleSlots && remainingCards.length > 0; i++) {
-    autoPlacements.push({ row: "middle", card: remainingCards.shift() });
-  }
-  
-  // Fill bottom row (5 slots)
-  const bottomSlots = 5 - player.board.bottom.length;
-  for (let i = 0; i < bottomSlots && remainingCards.length > 0; i++) {
-    autoPlacements.push({ row: "bottom", card: remainingCards.shift() });
-  }
-  
-  // Apply auto-placements
-  for (const placement of autoPlacements) {
-    player.board[placement.row].push(placement.card);
-  }
-  
-  // Add any remaining cards to discards
-  if (remainingCards.length > 0) {
-    player.discards.push(...remainingCards);
-  }
-  
-  // Clear hand and mark as ready
+  // Clear hand and currentDeal, mark as ready
   player.hand = [];
+  player.currentDeal = [];
   player.ready = true;
   
-  // Clear currentDeal since we've processed all cards
-  player.currentDeal = [];
-  
-  console.log(`Auto-commit result:`, { autoPlacements, discards: remainingCards });
+  console.log(`Auto-commit result:`, { autoPlacements, discards });
   console.log(`Player board after auto-commit:`, player.board);
   console.log(`Player hand after auto-commit:`, player.hand);
   console.log(`Player ready status:`, player.ready);
   
-  return { autoPlacements, discards: remainingCards };
+  return { autoPlacements, discards };
 }
