@@ -144,10 +144,7 @@ export const useGame = create((set, get) => ({
       case "action:applied": {
         // Handle auto-commit punishment
         if (data?.autoCommitted) {
-          console.log("🎯 Mobile auto-commit: updating state with server data");
-          console.log("Server board data:", data.board);
-          console.log("Server hand data:", data.hand);
-          console.log("Server discards data:", data.discards);
+          
           
           // Ensure we have valid board data from server
           const serverBoard = data.board || { top: [], middle: [], bottom: [] };

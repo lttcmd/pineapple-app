@@ -225,31 +225,16 @@ export default function Play({ route }) {
       }
       if (evt === 'action:applied' && data?.autoCommitted) {
         // Handle auto-commit punishment
-        console.log("🎯 AUTO-COMMIT PUNISHMENT DETECTED on mobile!");
-        console.log("Auto-commit data:", data);
-        
-        // The useGame state should handle the auto-commit automatically
-        // but we can add visual feedback here
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         
-        // Flash the screen red briefly to show punishment
+        // Flash the timer bar red briefly to show punishment
         setShowAutoCommitFlash(true);
-        setTimeout(() => setShowAutoCommitFlash(false), 500);
+        setTimeout(() => setShowAutoCommitFlash(false), 250);
         
         // Force a re-render to ensure UI updates
         setTimeout(() => {
           setForceUpdate(prev => prev + 1);
         }, 50);
-        
-        // Debug: Check state after auto-commit
-        setTimeout(() => {
-          const gameState = useGame.getState();
-          console.log("🎯 Mobile state after auto-commit:");
-          console.log("Board:", gameState.board);
-          console.log("Hand:", gameState.hand);
-          console.log("Discards:", gameState.discards);
-          console.log("Staged:", gameState.staged);
-        }, 100);
       }
       applyEvent(evt, data);
     });
@@ -392,10 +377,7 @@ export default function Play({ route }) {
   }, []);
 
   // Debug: Monitor board state changes
-  useEffect(() => {
-    console.log("🎯 Mobile board state changed:", board);
-    console.log("🎯 Force update count:", forceUpdate);
-  }, [board, forceUpdate]);
+
 
 
 
@@ -602,7 +584,7 @@ export default function Play({ route }) {
             top: 0,
             height: TIMER_HEIGHT,
             width: `${(smoothTimeLeft / (TIMER_DURATION * 1000)) * 100}%`,
-            backgroundColor: '#FFD700', // Yellow color
+            backgroundColor: showAutoCommitFlash ? '#FF4444' : '#FFD700', // Red when flashing, yellow normally
             borderRadius: 0
           }} />
         </View>
@@ -611,18 +593,7 @@ export default function Play({ route }) {
       {/* Row score bubbles positioned at row corners */}
       <ScoreBubbles show={showScore} playerAnchors={playerAnchors} oppAnchors={oppAnchors} detail={scoreDetail} />
       
-      {/* Auto-commit flash overlay */}
-      {showAutoCommitFlash && (
-        <View style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(255, 68, 68, 0.3)',
-          pointerEvents: 'none',
-        }} />
-      )}
+
 
       {/* Scoop badges - absolutely positioned to not affect layout */}
       {showScore && scoreDetail?.a?.scoop > 0 && (
