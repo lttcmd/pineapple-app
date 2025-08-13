@@ -450,6 +450,29 @@
       staged={placements:[],discard:null}; $('ready').disabled=true;
     });
 
+    // Handle auto-commit notification
+    socket.on("action:applied", (data) => {
+      console.log("Action applied received:", data);
+      
+      if (data.autoCommitted) {
+        console.log("Auto-commit detected, updating local state");
+        // Update local state with auto-committed cards
+        myBoard = data.board;
+        myHand = data.hand;
+        myDiscards = data.discards;
+        
+        // Clear staged state since cards were auto-committed
+        staged = { placements: [], discard: null };
+        lastBatch = [];
+        
+        // Update UI
+        renderHand();
+        refreshBoard();
+        
+        log("Cards auto-committed due to timeout");
+      }
+    });
+
     // Timer events
     socket.on("timer:start", handleTimerStart);
     socket.on("timer:update", handleTimerUpdate);

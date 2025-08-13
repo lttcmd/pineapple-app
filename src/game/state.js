@@ -100,6 +100,10 @@ export function stopTimer(room) {
 }
 
 export function autoCommitPlayer(room, player) {
+  console.log(`Auto-committing player ${player.userId} in phase ${room.phase}`);
+  console.log(`Player hand before auto-commit:`, player.hand);
+  console.log(`Player board before auto-commit:`, player.board);
+  
   // Auto-place remaining cards in order: top row first, then middle, then bottom
   const remainingCards = player.hand.slice();
   const autoPlacements = [];
@@ -135,6 +139,14 @@ export function autoCommitPlayer(room, player) {
   // Clear hand and mark as ready
   player.hand = [];
   player.ready = true;
+  
+  // Clear currentDeal since we've processed all cards
+  player.currentDeal = [];
+  
+  console.log(`Auto-commit result:`, { autoPlacements, discards: remainingCards });
+  console.log(`Player board after auto-commit:`, player.board);
+  console.log(`Player hand after auto-commit:`, player.hand);
+  console.log(`Player ready status:`, player.ready);
   
   return { autoPlacements, discards: remainingCards };
 }

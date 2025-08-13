@@ -58,8 +58,10 @@ export function leaveRoomHandler(io, socket, { roomId }) {
 // Timer timeout handler - auto-commit unready players
 function handleTimerTimeout(room, io) {
   console.log(`Timer expired for room ${room.id}, auto-committing unready players`);
+  console.log(`Room phase: ${room.phase}, roundIndex: ${room.roundIndex}`);
   
   const unreadyPlayers = [...room.players.values()].filter(p => !p.ready);
+  console.log(`Unready players:`, unreadyPlayers.map(p => ({ userId: p.userId, hand: p.hand, ready: p.ready })));
   
   for (const player of unreadyPlayers) {
     const result = autoCommitPlayer(room, player);
@@ -77,9 +79,14 @@ function handleTimerTimeout(room, io) {
   }
   
   // Check if all players are now ready
+  console.log(`All players ready after auto-commit:`, allReady(room));
+  console.log(`Player ready status:`, [...room.players.values()].map(p => ({ userId: p.userId, ready: p.ready, hand: p.hand })));
+  
   if (allReady(room)) {
+    console.log(`All players ready, proceeding to next phase`);
     handleAllPlayersReady(room, io);
   } else {
+    console.log(`Not all players ready, restarting timer`);
     // Start timer again for remaining unready players
     startTimer(room, io, handleTimerTimeout);
   }
