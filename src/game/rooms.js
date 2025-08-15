@@ -361,31 +361,6 @@ function calculateAndEmitScores(room, io) {
   });
 }
 
-/** Start a new hand/round: deal initial 5 to each player (same cards to everyone) */
-export function startRoundHandler(io, socket, { roomId }) {
-  const room = mem.rooms.get(roomId);
-  if (!room) return socket.emit(Events.ERROR, { message: "Room not found" });
-
-  if (room.players.size < rules.players.min) {
-    return socket.emit(Events.ERROR, { message: "Need more players" });
-  }
-
-  startRound(room);
-  io.to(roomId).emit(Events.START_ROUND, { round: room.round });
-
-  // Send initial 5 privately to each player (the last 5 dealt into their hand)
-  for (const p of room.players.values()) {
-    const slice = p.hand.slice(-rules.deal.initialSetCount);
-    p.currentDeal = slice;
-    io.to(p.socketId).emit(Events.DEAL_BATCH, { cards: slice });
-  }
-
-  // Start timer for initial set phase
-  startTimer(room, io, handleTimerTimeout);
-
-  emitRoomState(io, roomId);
-}
-
 /* ---------------- Public state emitter (redacted) ---------------- */
 
 export function emitRoomState(io, roomId) {
