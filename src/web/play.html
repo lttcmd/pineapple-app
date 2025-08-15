@@ -60,6 +60,10 @@
       background-color: #FFD700;
       transition: width 0.05s linear;
     }
+    .timer-bar.timeout {
+      background-color: #FF4444;
+      transition: background-color 0.1s ease;
+    }
     .opponent-timer {
       margin-top: 8px;
       height: 4px;
@@ -147,10 +151,16 @@
         <legend>Reveal & Scores</legend>
         <div class="small">Current totals (client-side):</div>
         <table id="scoreboard">
-          <thead><tr><th>Player</th><th>Total</th></tr></thead>
+          <thead><tr><th>Player</th><th>Total</th><th>Ready</th></tr></thead>
           <tbody></tbody>
         </table>
         <div id="revealPanel" class="small" style="margin-top:8px;">—</div>
+        <div id="nextRoundSection" style="display: none; margin-top: 10px;">
+          <button id="nextRoundBtn" style="background: #2e7d32; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;">
+            NEXT ROUND
+          </button>
+          <div id="nextRoundStatus" style="margin-top: 8px; font-size: 12px; color: #9aa3b2;"></div>
+        </div>
       </fieldset>
 
       <fieldset style="border:1px solid #2a3244; border-radius:10px; padding:10px; margin-top:12px;">
@@ -209,9 +219,17 @@
       isTimerActive = data.isActive;
       
       // Update timer bar
-      const progress = (serverTimeLeft / 15000) * 100;
+      const progress = Math.max(0, (serverTimeLeft / 15000) * 100);
       $('timerBar').style.width = progress + '%';
       $('opponentTimerBar').style.width = progress + '%';
+      
+      // Flash red when time runs out
+      if (serverTimeLeft <= 0) {
+        $('timerBar').classList.add('timeout');
+        setTimeout(() => {
+          $('timerBar').classList.remove('timeout');
+        }, 300);
+      }
       
       // Debug logging every 2 seconds
       if (serverTimeLeft % 2000 < 100) {
@@ -342,14 +360,6 @@
     }
   }
 
-  // send to server
-  socket.emit("action:ready", {
-    roomId,
-    placements: staged.placements,
-    discard: staged.discard,
-    userId: myUserId
-  });
-
   // optimistic commit
   for (const p of staged.placements) myBoard[p.row].push(p.card);
   if (staged.discard) myDiscards.push(staged.discard);
@@ -361,6 +371,14 @@
   staged = { placements: [], discard: null };
   renderHand();
   refreshBoard();
+  
+  // send to server
+  socket.emit("action:ready", {
+    roomId,
+    placements: staged.placements,
+    discard: staged.discard,
+    userId: myUserId
+  });
 };
 
     // scoreboard / reveal
@@ -423,6 +441,37 @@
     // socket
     function setPhase(p){ currentPhase=p||'—'; $('phase').textContent=currentPhase; $('ready').disabled=!canSet(); }
     function log(m){ $('log').textContent += m + "\n"; }
+    
+    function updateNextRoundStatus(players) {
+      const tbody = $('scoreboard').querySelector('tbody');
+      tbody.innerHTML = '';
+      
+      players.forEach(player => {
+        const tr = document.createElement('tr');
+        const tdName = document.createElement('td');
+        const tdScore = document.createElement('td');
+        const tdReady = document.createElement('td');
+        
+        tdName.textContent = player.name;
+        tdScore.textContent = player.score || 0;
+        
+        if (player.readyForNextRound) {
+          tdReady.innerHTML = '✅';
+        } else {
+          tdReady.innerHTML = '⏳';
+        }
+        
+        tr.appendChild(tdName);
+        tr.appendChild(tdScore);
+        tr.appendChild(tdReady);
+        tbody.appendChild(tr);
+      });
+      
+      // Update status text
+      const readyCount = players.filter(p => p.readyForNextRound).length;
+      const totalCount = players.length;
+      $('nextRoundStatus').textContent = `${readyCount}/${totalCount} players ready for next round`;
+    }
 
     socket = io("/", { auth:{ token } });
     socket.on('connect', ()=>{
@@ -434,7 +483,17 @@
     socket.on('disconnect', ()=> $('conn').textContent='disconnected');
     socket.on("auth:ok", (x)=>{ myUserId = x?.userId || myUserId; });
 
-    socket.on("room:state", (s)=>{ setPhase(s.phase); log("STATE\n"+JSON.stringify(s,null,2)); });
+    socket.on("room:state", (s)=>{ 
+      setPhase(s.phase); 
+      log("STATE\n"+JSON.stringify(s,null,2)); 
+      
+      // Update next round status
+      if (s.phase === 'reveal') {
+        updateNextRoundStatus(s.players);
+      } else {
+        $('nextRoundSection').style.display = 'none';
+      }
+    });
     socket.on("round:start", ({round})=>{
       console.log("Round start:", round);
       myBoard={top:[],middle:[],bottom:[]}; myDiscards=[]; staged={placements:[],discard:null}; lastBatch=[];
@@ -448,6 +507,16 @@
       if (myUserId) renderRevealPanel(myUserId, payload);
       // reset staged so next hand starts clean
       staged={placements:[],discard:null}; $('ready').disabled=true;
+      
+      // Show next round section
+      $('nextRoundSection').style.display = 'block';
+      
+      // Submit final board for scoring
+      socket.emit("action:reveal-board", {
+        roomId,
+        board: myBoard,
+        discards: myDiscards
+      });
     });
 
     // Handle auto-commit notification
@@ -491,10 +560,10 @@
         }
         
         // Add visual flash effect to show auto-commit happened
-        document.body.style.backgroundColor = '#ff4444';
+        $('timerBar').classList.add('timeout');
         setTimeout(() => {
-          document.body.style.backgroundColor = '';
-        }, 500);
+          $('timerBar').classList.remove('timeout');
+        }, 300);
       }
     });
 
@@ -503,6 +572,12 @@
     socket.on("timer:update", handleTimerUpdate);
     socket.on("timer:stop", handleTimerStop);
     socket.on("error:msg", (e)=> log("ERROR "+e.message));
+    
+    // Next round button
+    $('nextRoundBtn').onclick = () => {
+      socket.emit("action:ready-next-round", { roomId });
+      log("Ready for next round");
+    };
   </script>
 </body>
 </html>

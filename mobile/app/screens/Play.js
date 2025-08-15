@@ -37,7 +37,7 @@ function getFoulTransform(index) {
   };
 }
 
-function NameWithScore({ name, score, delta }) {
+function NameWithScore({ name, score, delta, readyForNextRound }) {
   const deltaText = typeof delta === 'number' ? (delta >= 0 ? `+${delta}` : `${delta}`) : null;
   const deltaColor = deltaText && deltaText.startsWith('+') ? colors.ok || '#2e7d32' : '#C62828';
   return (
@@ -46,6 +46,9 @@ function NameWithScore({ name, score, delta }) {
       <Text style={{ color: colors.sub, fontSize: 16 }}>
         {score ?? 0} {deltaText ? <Text style={{ color: deltaColor }}> {deltaText}</Text> : null}
       </Text>
+      {readyForNextRound && (
+        <Text style={{ color: '#2e7d32', fontSize: 16, marginLeft: 8 }}>✅</Text>
+      )}
     </View>
   );
 }
@@ -211,6 +214,13 @@ export default function Play({ route }) {
           setScoreDetail(scoreDetail);
           setShowScore(true); // persist until next round
         }
+        
+        // Submit final board for scoring
+        emit("action:reveal-board", {
+          roomId,
+          board: board,
+          discards: discards
+        });
       }
       if (evt === 'action:ready') {
         // Add player to ready set
@@ -229,7 +239,7 @@ export default function Play({ route }) {
         
         // Flash the timer bar red briefly to show punishment
         setShowAutoCommitFlash(true);
-        setTimeout(() => setShowAutoCommitFlash(false), 250);
+        setTimeout(() => setShowAutoCommitFlash(false), 300);
         
         // Force a re-render to ensure UI updates
         setTimeout(() => {
@@ -393,7 +403,7 @@ export default function Play({ route }) {
       {/* Opponent area */}
       <View style={{ paddingTop: 80, paddingHorizontal: 12 }}>
         {others[0] ? (
-          <NameWithScore name={others[0].name} score={others[0].score} delta={reveal?.results?.[others[0].userId]} />
+          <NameWithScore name={others[0].name} score={others[0].score} delta={reveal?.results?.[others[0].userId]} readyForNextRound={others[0].readyForNextRound} />
         ) : null}
         <OpponentBoard
           board={opponentBoard}
@@ -416,7 +426,7 @@ export default function Play({ route }) {
       {/* Player board and hand area */}
       <View style={{ flex: 1, justifyContent: "center" }}>
         <View style={{ alignSelf: "center", marginBottom: 8 }}>
-          <NameWithScore name={me.name || 'You'} score={me.score} delta={reveal?.results?.[me.userId]} />
+          <NameWithScore name={me.name || 'You'} score={me.score} delta={reveal?.results?.[me.userId]} readyForNextRound={me.readyForNextRound} />
         </View>
         <View style={{ alignSelf: "center", height: BOARD_HEIGHT, paddingHorizontal: 6, justifyContent: "center" }}>
           {/* Player rows with in-row anchors */}
@@ -510,7 +520,7 @@ export default function Play({ route }) {
           {reveal ? (
             <Pressable
               onPress={() => {
-                emit("round:start", { roomId });
+                emit("action:ready-next-round", { roomId });
                 playSfx('roundstart');
               }}
               style={{
@@ -583,7 +593,7 @@ export default function Play({ route }) {
             left: 0,
             top: 0,
             height: TIMER_HEIGHT,
-            width: `${(smoothTimeLeft / (TIMER_DURATION * 1000)) * 100}%`,
+            width: `${Math.max(0, (smoothTimeLeft / (TIMER_DURATION * 1000)) * 100)}%`,
             backgroundColor: showAutoCommitFlash ? '#FF4444' : '#FFD700', // Red when flashing, yellow normally
             borderRadius: 0
           }} />

@@ -4,7 +4,8 @@ import { config } from "../config/env.js";
 import { Events } from "./events.js";
 import {
   createRoomHandler, joinRoomHandler, leaveRoomHandler,
-  startRoundHandler, placeHandler, discardHandler, readyHandler
+  startRoundHandler, placeHandler, discardHandler, readyHandler,
+  revealBoardHandler, readyForNextRoundHandler
 } from "../game/rooms.js";
 
 export function attachIO(httpServer) {
@@ -34,6 +35,8 @@ export function attachIO(httpServer) {
     socket.on(Events.PLACE, (p) => placeHandler(io, socket, p));
     socket.on(Events.DISCARD, (p) => discardHandler(io, socket, p));
     socket.on(Events.READY, (p) => readyHandler(io, socket, p));
+    socket.on(Events.REVEAL_BOARD, (p) => revealBoardHandler(io, socket, p));
+    socket.on(Events.READY_NEXT_ROUND, (p) => readyForNextRoundHandler(io, socket, p));
   });
 
   return io;

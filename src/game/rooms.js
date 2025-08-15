@@ -118,68 +118,18 @@ function handleAllPlayersReady(room, io) {
     return;
   }
 
-  // Reveal & score
+  // Move to reveal phase - players will submit their final boards
   room.phase = "reveal";
   
   // Stop the timer when reveal phase begins
   stopTimer(room, io);
-  const playersArr = [...room.players.values()];
-
-  // Public boards summary (with foul reason if any)
-  const boards = playersArr.map(pl => {
-    const v = validateBoard(pl.board);
-    return {
-      userId: pl.userId,
-      name: pl.name,
-      board: pl.board,
-      valid: !v.fouled,
-      reason: v.fouled ? v.reason : null
-    };
-  });
-
-  // Pairwise detailed settle
-  const totals = {};
-  const pairwise = [];
-  for (let i = 0; i < playersArr.length; i++) {
-    for (let j = i + 1; j < playersArr.length; j++) {
-      const A = playersArr[i], B = playersArr[j];
-      const det = settlePairwiseDetailed(A.board, B.board);
-      pairwise.push({
-        aUserId: A.userId,
-        bUserId: B.userId,
-        a: det.a,
-        b: det.b
-      });
-
-      if (playersArr.length === 2) {
-        // Difference-based scoring: compute gross points for each, then use the difference
-        const grossA = Math.max(det.a.lines.top, 0) + Math.max(det.a.lines.middle, 0) + Math.max(det.a.lines.bottom, 0)
-          + (det.a.scoop > 0 ? det.a.scoop : 0) + det.a.royalties;
-        const grossB = Math.max(det.b.lines.top, 0) + Math.max(det.b.lines.middle, 0) + Math.max(det.b.lines.bottom, 0)
-          + (det.b.scoop > 0 ? det.b.scoop : 0) + det.b.royalties;
-        const diff = grossA - grossB;
-        totals[A.userId] = (totals[A.userId] || 0) + diff;
-        totals[B.userId] = (totals[B.userId] || 0) - diff;
-      } else {
-        // Multi-player: sum zero-sum pairwise totals
-        totals[A.userId] = (totals[A.userId] || 0) + det.a.total;
-        totals[B.userId] = (totals[B.userId] || 0) + det.b.total;
-      }
-    }
-  }
-
-  // Update cumulative scores
+  
+  // Reset ready for next round status
   for (const pl of room.players.values()) {
-    const delta = totals[pl.userId] || 0;
-    pl.score = (pl.score || 0) + delta;
+    pl.readyForNextRound = false;
   }
 
-  io.to(room.id).emit(Events.REVEAL, {
-    boards,
-    results: totals,      // per-hand delta
-    pairwise,             // detailed per-pair breakdown
-    round: room.round
-  });
+  emitRoomState(io, room.id);
 }
 
 /** Start a new hand/round: deal initial 5 to each player (same cards to everyone) */
@@ -280,6 +230,162 @@ export function readyHandler(io, socket, { roomId, placements = [], discard = nu
   }
 }
 
+/* ---------------- Reveal board handler (submit final board for scoring) ---------------- */
+
+export function revealBoardHandler(io, socket, { roomId, board, discards }) {
+  const room = mem.rooms.get(roomId);
+  if (!room) return socket.emit(Events.ERROR, { message: "Room not found" });
+
+  const p = room.players.get(socket.user.sub);
+  if (!p) return socket.emit(Events.ERROR, { message: "Player not found" });
+
+  if (room.phase !== "reveal") {
+    return socket.emit(Events.ERROR, { message: "Not in reveal phase" });
+  }
+
+  // Store the final board for scoring
+  p.finalBoard = { ...board };
+  p.finalDiscards = [...discards];
+
+  // Acknowledge receipt
+  socket.emit(Events.ACTION_APPLIED, {
+    board: p.finalBoard,
+    discards: p.finalDiscards
+  });
+
+  // Check if all players have submitted their boards
+  const allBoardsSubmitted = [...room.players.values()].every(p => p.finalBoard !== null);
+  
+  if (allBoardsSubmitted) {
+    // Calculate scoring using final boards
+    calculateAndEmitScores(room, io);
+  }
+}
+
+/* ---------------- Ready for next round handler ---------------- */
+
+export function readyForNextRoundHandler(io, socket, { roomId }) {
+  const room = mem.rooms.get(roomId);
+  if (!room) return socket.emit(Events.ERROR, { message: "Room not found" });
+
+  const p = room.players.get(socket.user.sub);
+  if (!p) return socket.emit(Events.ERROR, { message: "Player not found" });
+
+  if (room.phase !== "reveal") {
+    return socket.emit(Events.ERROR, { message: "Not in reveal phase" });
+  }
+
+  p.readyForNextRound = true;
+
+  // Check if all players are ready for next round
+  const allReadyForNext = [...room.players.values()].every(p => p.readyForNextRound);
+  
+  if (allReadyForNext) {
+    // Start the next round
+    startRound(room);
+    io.to(roomId).emit(Events.START_ROUND, { round: room.round });
+
+    // Send initial 5 privately to each player
+    for (const p of room.players.values()) {
+      const slice = p.hand.slice(-rules.deal.initialSetCount);
+      p.currentDeal = slice;
+      io.to(p.socketId).emit(Events.DEAL_BATCH, { cards: slice });
+    }
+
+    // Start timer for initial set phase
+    startTimer(room, io, handleTimerTimeout);
+  }
+
+  emitRoomState(io, roomId);
+}
+
+/* ---------------- Calculate and emit scores using final boards ---------------- */
+
+function calculateAndEmitScores(room, io) {
+  const playersArr = [...room.players.values()];
+
+  // Public boards summary (with foul reason if any)
+  const boards = playersArr.map(pl => {
+    const v = validateBoard(pl.finalBoard);
+    return {
+      userId: pl.userId,
+      name: pl.name,
+      board: pl.finalBoard,
+      valid: !v.fouled,
+      reason: v.fouled ? v.reason : null
+    };
+  });
+
+  // Pairwise detailed settle using final boards
+  const totals = {};
+  const pairwise = [];
+  for (let i = 0; i < playersArr.length; i++) {
+    for (let j = i + 1; j < playersArr.length; j++) {
+      const A = playersArr[i], B = playersArr[j];
+      const det = settlePairwiseDetailed(A.finalBoard, B.finalBoard);
+      pairwise.push({
+        aUserId: A.userId,
+        bUserId: B.userId,
+        a: det.a,
+        b: det.b
+      });
+
+      if (playersArr.length === 2) {
+        // Difference-based scoring: compute gross points for each, then use the difference
+        const grossA = Math.max(det.a.lines.top, 0) + Math.max(det.a.lines.middle, 0) + Math.max(det.a.lines.bottom, 0)
+          + (det.a.scoop > 0 ? det.a.scoop : 0) + det.a.royalties;
+        const grossB = Math.max(det.b.lines.top, 0) + Math.max(det.b.lines.middle, 0) + Math.max(det.b.lines.bottom, 0)
+          + (det.b.scoop > 0 ? det.b.scoop : 0) + det.b.royalties;
+        const diff = grossA - grossB;
+        totals[A.userId] = (totals[A.userId] || 0) + diff;
+        totals[B.userId] = (totals[B.userId] || 0) - diff;
+      } else {
+        // Multi-player: sum zero-sum pairwise totals
+        totals[A.userId] = (totals[A.userId] || 0) + det.a.total;
+        totals[B.userId] = (totals[B.userId] || 0) + det.b.total;
+      }
+    }
+  }
+
+  // Update cumulative scores
+  for (const pl of room.players.values()) {
+    const delta = totals[pl.userId] || 0;
+    pl.score = (pl.score || 0) + delta;
+  }
+
+  io.to(room.id).emit(Events.REVEAL, {
+    boards,
+    results: totals,      // per-hand delta
+    pairwise,             // detailed per-pair breakdown
+    round: room.round
+  });
+}
+
+/** Start a new hand/round: deal initial 5 to each player (same cards to everyone) */
+export function startRoundHandler(io, socket, { roomId }) {
+  const room = mem.rooms.get(roomId);
+  if (!room) return socket.emit(Events.ERROR, { message: "Room not found" });
+
+  if (room.players.size < rules.players.min) {
+    return socket.emit(Events.ERROR, { message: "Need more players" });
+  }
+
+  startRound(room);
+  io.to(roomId).emit(Events.START_ROUND, { round: room.round });
+
+  // Send initial 5 privately to each player (the last 5 dealt into their hand)
+  for (const p of room.players.values()) {
+    const slice = p.hand.slice(-rules.deal.initialSetCount);
+    p.currentDeal = slice;
+    io.to(p.socketId).emit(Events.DEAL_BATCH, { cards: slice });
+  }
+
+  // Start timer for initial set phase
+  startTimer(room, io, handleTimerTimeout);
+
+  emitRoomState(io, roomId);
+}
+
 /* ---------------- Public state emitter (redacted) ---------------- */
 
 export function emitRoomState(io, roomId) {
@@ -295,7 +401,8 @@ export function emitRoomState(io, roomId) {
       bottom: p.board.bottom.length
     },
     score: p.score || 0,
-    ready: p.ready
+    ready: p.ready,
+    readyForNextRound: p.readyForNextRound || false
   }));
 
   io.to(roomId).emit(Events.ROOM_STATE, {
