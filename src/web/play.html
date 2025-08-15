@@ -180,6 +180,10 @@
     let lastBatch = [];
     const totals = new Map();
     
+    // Next round state
+    let nextRoundReadyPlayers = new Set();
+    let hasClickedNextRound = false;
+
     // Timer state - now controlled by server
     let serverTimeLeft = 15000; // 15 seconds in milliseconds
     let isTimerActive = false;
@@ -319,7 +323,12 @@
 
     // buttons
     $('start').onclick = () => {
-      socket.emit("round:start", { roomId });
+      if (!hasClickedNextRound) {
+        socket.emit("round:next-request", { roomId });
+        hasClickedNextRound = true;
+        $('start').textContent = 'WAITING...';
+        $('start').disabled = true;
+      }
     };
  $('ready').onclick = () => {
   if (!socket) return alert('Connect first');
@@ -439,6 +448,11 @@
       console.log("Round start:", round);
       myBoard={top:[],middle:[],bottom:[]}; myDiscards=[]; staged={placements:[],discard:null}; lastBatch=[];
       $('revealPanel').textContent='—'; renderHand(); refreshBoard(); log("START round "+round);
+      // Reset next round state
+      nextRoundReadyPlayers = new Set();
+      hasClickedNextRound = false;
+      $('start').textContent = 'Start Round';
+      $('start').disabled = false;
     });
     socket.on("round:deal", ({cards})=>{
       lastBatch = cards.slice(); myHand = myHand.concat(cards); renderHand(); $('ready').disabled=!canSet(); log("DEAL "+JSON.stringify(cards));
@@ -448,6 +462,22 @@
       if (myUserId) renderRevealPanel(myUserId, payload);
       // reset staged so next hand starts clean
       staged={placements:[],discard:null}; $('ready').disabled=true;
+      // Show next round button
+      $('start').textContent = 'NEXT ROUND';
+      $('start').disabled = false;
+    });
+    
+    // Handle next round ready updates
+    socket.on("round:next-ready", (data) => {
+      nextRoundReadyPlayers = new Set(data.readyPlayers);
+      log(`Next round ready: ${data.readyPlayers.length} players`);
+      
+      // If all players are ready, the round will start automatically
+      if (data.allPlayersReady) {
+        hasClickedNextRound = false;
+        $('start').textContent = 'Starting...';
+        $('start').disabled = true;
+      }
     });
 
     // Handle auto-commit notification
@@ -494,7 +524,7 @@
         document.body.style.backgroundColor = '#ff4444';
         setTimeout(() => {
           document.body.style.backgroundColor = '';
-        }, 500);
+        }, 300);
       }
     });
 

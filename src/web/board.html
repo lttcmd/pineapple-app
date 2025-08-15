@@ -188,6 +188,10 @@
     let currentPhase = 'lobby';
     let lastBatch = [];   // newest deal (5 then 3)
     const totals = new Map(); // running totals by userId (client-side)
+    
+    // Next round state
+    let nextRoundReadyPlayers = new Set();
+    let hasClickedNextRound = false;
 
     const $ = (id) => document.getElementById(id);
     const log = (m) => { $('log').textContent += m + "\\n"; };
@@ -496,6 +500,29 @@
         $('revealPanel').textContent = '—';
         renderHand(); refreshBoard();
         log("START round " + round);
+        // Reset next round state
+        nextRoundReadyPlayers = new Set();
+        hasClickedNextRound = false;
+        $('start').textContent = 'Start Round';
+      });
+
+      socket.on("round:reveal", (payload) => {
+        log("REVEAL\n" + JSON.stringify(payload, null, 2));
+        if (myUserId) renderRevealPanel(myUserId, payload);
+        // Show next round button
+        $('start').textContent = 'NEXT ROUND';
+      });
+      
+      // Handle next round ready updates
+      socket.on("round:next-ready", (data) => {
+        nextRoundReadyPlayers = new Set(data.readyPlayers);
+        log(`Next round ready: ${data.readyPlayers.length} players`);
+        
+        // If all players are ready, the round will start automatically
+        if (data.allPlayersReady) {
+          hasClickedNextRound = false;
+          $('start').textContent = 'Starting...';
+        }
       });
 
       socket.on("room:create", ({ roomId }) => {
@@ -516,11 +543,6 @@
         log("DEAL " + JSON.stringify(cards));
       });
 
-      socket.on("round:reveal", (payload) => {
-        log("REVEAL\n" + JSON.stringify(payload, null, 2));
-        if (myUserId) renderRevealPanel(myUserId, payload);
-      });
-
       socket.on("error:msg", (e) => log("ERROR " + e.message));
     };
 
@@ -537,7 +559,13 @@
       if (!socket) return alert('Connect first');
       const roomId = $('room').value.trim();
       if (!roomId) return alert('Enter ROOMID');
-      socket.emit("round:start", { roomId });
+      
+      if (!hasClickedNextRound) {
+        socket.emit("round:next-request", { roomId });
+        hasClickedNextRound = true;
+        $('start').textContent = 'WAITING...';
+        $('start').disabled = true;
+      }
     };
   </script>
 </body>

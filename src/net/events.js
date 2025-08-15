@@ -12,6 +12,8 @@ export const Events = {
   READY: "action:ready",
   ACTION_APPLIED: "action:applied",
   REVEAL: "round:reveal",
+  NEXT_ROUND_REQUEST: "round:next-request",
+  NEXT_ROUND_READY: "round:next-ready",
 
   // Timer events
   TIMER_START: "timer:start",

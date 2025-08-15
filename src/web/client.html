@@ -101,6 +101,10 @@
     let myPlaced = { top:0, middle:0, bottom:0 };
     let selected = new Set();
     let staged = { placements: [], discard: null }; // <-- batch
+    
+    // Next round state
+    let nextRoundReadyPlayers = new Set();
+    let hasClickedNextRound = false;
 
     const $ = (id) => document.getElementById(id);
     const log = (m) => { $('log').textContent += m + "\\n"; };
@@ -202,7 +206,23 @@
         renderHand(); log("DEAL " + JSON.stringify(cards));
       });
 
-      socket.on("round:reveal", (payload) => { log("REVEAL\n" + JSON.stringify(payload, null, 2)); });
+      socket.on("round:reveal", (payload) => { 
+        log("REVEAL\n" + JSON.stringify(payload, null, 2)); 
+        // Show next round button
+        $('start').textContent = 'NEXT ROUND';
+      });
+      
+      // Handle next round ready updates
+      socket.on("round:next-ready", (data) => {
+        nextRoundReadyPlayers = new Set(data.readyPlayers);
+        log(`Next round ready: ${data.readyPlayers.length} players`);
+        
+        // If all players are ready, the round will start automatically
+        if (data.allPlayersReady) {
+          hasClickedNextRound = false;
+          $('start').textContent = 'Starting...';
+        }
+      });
 
       socket.on("error:msg", (e) => log("ERROR " + e.message));
     };
@@ -218,7 +238,13 @@
     $('start').onclick = () => {
       if(!socket) return alert('Connect first');
       const roomId=$('room').value.trim(); if(!roomId) return alert('Enter ROOMID');
-      socket.emit("round:start",{ roomId });
+      
+      if (!hasClickedNextRound) {
+        socket.emit("round:next-request", { roomId });
+        hasClickedNextRound = true;
+        $('start').textContent = 'WAITING...';
+        $('start').disabled = true;
+      }
     };
 
     // Staging helpers

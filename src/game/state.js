@@ -21,7 +21,9 @@ export function createRoom(roomId) {
       timeLeft: ROUND_TIMER_DURATION,
       intervalId: null,
       startTime: null
-    }
+    },
+    // Next round state - track which players have clicked "next round"
+    nextRoundReady: new Set()
   };
 }
 
@@ -29,16 +31,21 @@ export function startRound(room) {
   room.round += 1;
   room.phase = "initial-set";
   room.roundIndex = 0;
-  room.seed = `${room.id}:${room.round}:${Date.now()}`;
-  room.sharedDeck = shuffleDeterministic(makeDeck(), room.seed);
-
+  
+  // Clear next round ready state for new round
+  room.nextRoundReady.clear();
+  
+  // Clear all players' hands and boards
   for (const p of room.players.values()) {
-    p.board = { top: [], middle: [], bottom: [] };
     p.hand = [];
+    p.board = { top: [], middle: [], bottom: [] };
     p.discards = [];
     p.ready = false;
     p.currentDeal = [];
   }
+  
+  // Generate new deck and deal initial cards
+  room.sharedDeck = shuffleDeterministic(makeDeck(), `${room.id}:${room.round}:${Date.now()}`);
   dealToAll(room, rules.deal.initialSetCount);
 }
 
@@ -192,4 +199,20 @@ export function autoCommitPlayer(room, player) {
   console.log(`=== END AUTO-COMMIT ===`);
   
   return { autoPlacements, discards };
+}
+
+export function requestNextRound(room, playerId) {
+  // Add player to next round ready set
+  room.nextRoundReady.add(playerId);
+  
+  // Check if all players are ready for next round
+  const allPlayersReady = [...room.players.keys()].every(playerId => 
+    room.nextRoundReady.has(playerId)
+  );
+  
+  return {
+    playerReady: true,
+    allPlayersReady,
+    readyPlayers: [...room.nextRoundReady]
+  };
 }

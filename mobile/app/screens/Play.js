@@ -146,6 +146,10 @@ export default function Play({ route }) {
   const [readyPlayers, setReadyPlayers] = useState(new Set());
   const [showAutoCommitFlash, setShowAutoCommitFlash] = useState(false);
   const [forceUpdate, setForceUpdate] = useState(0);
+  
+  // Next round state
+  const [nextRoundReadyPlayers, setNextRoundReadyPlayers] = useState(new Set());
+  const [hasClickedNextRound, setHasClickedNextRound] = useState(false);
 
   // measure rows for hover/drop (player)
   const topRef = useRef(null), midRef = useRef(null), botRef = useRef(null);
@@ -202,6 +206,9 @@ export default function Play({ route }) {
         // Clear previous reveal/score UI when a new round begins
         setShowScore(false);
         setScoreDetail(null);
+        // Reset next round state
+        setNextRoundReadyPlayers(new Set());
+        setHasClickedNextRound(false);
       }
       if (evt === 'round:reveal') {
         const meId = useGame.getState().userId;
@@ -227,14 +234,23 @@ export default function Play({ route }) {
         // Handle auto-commit punishment
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         
-        // Flash the timer bar red briefly to show punishment
+        // Flash the timer bar red briefly to show punishment - exactly 300ms
         setShowAutoCommitFlash(true);
-        setTimeout(() => setShowAutoCommitFlash(false), 250);
+        setTimeout(() => setShowAutoCommitFlash(false), 300);
         
         // Force a re-render to ensure UI updates
         setTimeout(() => {
           setForceUpdate(prev => prev + 1);
         }, 50);
+      }
+      if (evt === 'round:next-ready') {
+        // Handle next round ready updates
+        setNextRoundReadyPlayers(new Set(data.readyPlayers));
+        
+        // If all players are ready, the round will start automatically
+        if (data.allPlayersReady) {
+          setHasClickedNextRound(false);
+        }
       }
       applyEvent(evt, data);
     });
@@ -510,21 +526,26 @@ export default function Play({ route }) {
           {reveal ? (
             <Pressable
               onPress={() => {
-                emit("round:start", { roomId });
-                playSfx('roundstart');
+                if (!hasClickedNextRound) {
+                  emit("round:next-request", { roomId });
+                  setHasClickedNextRound(true);
+                  playSfx('roundstart');
+                }
               }}
               style={{
                 paddingVertical: 12,
                 paddingHorizontal: 24,
                 borderRadius: 25,
-                backgroundColor: "#2e7d32",
+                backgroundColor: hasClickedNextRound ? "#666" : "#2e7d32",
                 borderWidth: 0,
                 minWidth: 140,
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <Text style={{ color: "#fff", fontSize: 16, fontWeight: "600" }}>NEXT ROUND</Text>
+              <Text style={{ color: "#fff", fontSize: 16, fontWeight: "600" }}>
+                {hasClickedNextRound ? "WAITING..." : "NEXT ROUND"}
+              </Text>
             </Pressable>
           ) : (
             <View style={{ width: 140 }} />

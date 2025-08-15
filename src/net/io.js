@@ -4,7 +4,7 @@ import { config } from "../config/env.js";
 import { Events } from "./events.js";
 import {
   createRoomHandler, joinRoomHandler, leaveRoomHandler,
-  startRoundHandler, placeHandler, discardHandler, readyHandler
+  startRoundHandler, nextRoundRequestHandler, placeHandler, discardHandler, readyHandler
 } from "../game/rooms.js";
 
 export function attachIO(httpServer) {
@@ -30,6 +30,7 @@ export function attachIO(httpServer) {
     socket.on(Events.JOIN_ROOM, (p) => joinRoomHandler(io, socket, p));
     socket.on(Events.LEAVE_ROOM, (p) => leaveRoomHandler(io, socket, p));
     socket.on(Events.START_ROUND, (p) => startRoundHandler(io, socket, p));
+    socket.on(Events.NEXT_ROUND_REQUEST, (p) => nextRoundRequestHandler(io, socket, p));
 
     socket.on(Events.PLACE, (p) => placeHandler(io, socket, p));
     socket.on(Events.DISCARD, (p) => discardHandler(io, socket, p));

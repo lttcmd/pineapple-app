@@ -207,6 +207,27 @@ export function startRoundHandler(io, socket, { roomId }) {
   emitRoomState(io, roomId);
 }
 
+/** Handle next round request - requires all players to click */
+export function nextRoundRequestHandler(io, socket, { roomId }) {
+  const room = mem.rooms.get(roomId);
+  if (!room) return socket.emit(Events.ERROR, { message: "Room not found" });
+
+  const playerId = socket.user.sub;
+  const result = requestNextRound(room, playerId);
+  
+  // Notify all players about the next round request
+  io.to(roomId).emit(Events.NEXT_ROUND_READY, {
+    playerId,
+    readyPlayers: result.readyPlayers,
+    allPlayersReady: result.allPlayersReady
+  });
+  
+  // If all players are ready, start the next round
+  if (result.allPlayersReady) {
+    startRoundHandler(io, socket, { roomId });
+  }
+}
+
 /* ---------------- Legacy single-action handlers (kept for manual testing) ---------------- */
 
 export function placeHandler(io, socket, { roomId, placements }) {
