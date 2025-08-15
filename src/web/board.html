@@ -478,6 +478,9 @@
         myHand=[]; myBoard={ top:[], middle:[], bottom:[] }; myDiscards=[]; staged={ placements:[], discard:null }; lastBatch=[];
         totals.clear();
         renderHand(); refreshBoard(); $('revealPanel').textContent = '—';
+        // Reset next round ready state
+        nextRoundReady.clear();
+        updateStartButton();
       });
       socket.on('disconnect', () => { setConn('disconnected'); setPhase('—'); setRoomLabel('—'); log('disconnected'); });
 
@@ -505,6 +508,7 @@
       socket.on("room:state", (s) => {
         setPhase(s.phase); setRoomLabel(s.roomId||'—');
         log("STATE\n" + JSON.stringify(s, null, 2));
+        updateStartButton();
       });
 
       socket.on("round:deal", ({ cards }) => {
@@ -541,7 +545,7 @@
         startBtn.textContent = 'Waiting for opponent...';
         startBtn.disabled = true;
       } else {
-        startBtn.textContent = 'Next Round';
+        startBtn.textContent = 'Ready';
         startBtn.disabled = false;
       }
     }

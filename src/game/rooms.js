@@ -191,40 +191,74 @@ export function startRoundHandler(io, socket, { roomId }) {
     return socket.emit(Events.ERROR, { message: "Need more players" });
   }
 
-  // Only allow starting if we're in reveal phase
-  if (room.phase !== "reveal") {
-    return socket.emit(Events.ERROR, { message: "Can only start next round after reveal" });
-  }
-
   const playerId = socket.user.sub;
   
-  // Add this player to the ready set
-  room.nextRoundReady.add(playerId);
-  
-  // Check if all players are ready
-  if (allReadyForNextRound(room)) {
-    // All players ready, start the round
-    startRound(room);
-    io.to(roomId).emit(Events.START_ROUND, { round: room.round });
+  // Handle initial round start from lobby
+  if (room.phase === "lobby") {
+    // Add this player to the ready set for initial round
+    room.nextRoundReady.add(playerId);
+    
+    // Check if all players are ready
+    if (allReadyForNextRound(room)) {
+      // All players ready, start the first round
+      startRound(room);
+      io.to(roomId).emit(Events.START_ROUND, { round: room.round });
 
-    // Send initial 5 privately to each player (the last 5 dealt into their hand)
-    for (const p of room.players.values()) {
-      const slice = p.hand.slice(-rules.deal.initialSetCount);
-      p.currentDeal = slice;
-      io.to(p.socketId).emit(Events.DEAL_BATCH, { cards: slice });
+      // Send initial 5 privately to each player (the last 5 dealt into their hand)
+      for (const p of room.players.values()) {
+        const slice = p.hand.slice(-rules.deal.initialSetCount);
+        p.currentDeal = slice;
+        io.to(p.socketId).emit(Events.DEAL_BATCH, { cards: slice });
+      }
+
+      // Start timer for initial set phase
+      startTimer(room, io, handleTimerTimeout);
+    } else {
+      // Not all players ready yet, just emit the ready state
+      io.to(roomId).emit(Events.NEXT_ROUND_READY_UPDATE, { 
+        readyPlayers: [...room.nextRoundReady],
+        allReady: false
+      });
+    }
+    
+    emitRoomState(io, roomId);
+    return;
+  }
+  
+  // Handle next round start from reveal phase
+  if (room.phase === "reveal") {
+    // Add this player to the ready set
+    room.nextRoundReady.add(playerId);
+    
+    // Check if all players are ready
+    if (allReadyForNextRound(room)) {
+      // All players ready, start the round
+      startRound(room);
+      io.to(roomId).emit(Events.START_ROUND, { round: room.round });
+
+      // Send initial 5 privately to each player (the last 5 dealt into their hand)
+      for (const p of room.players.values()) {
+        const slice = p.hand.slice(-rules.deal.initialSetCount);
+        p.currentDeal = slice;
+        io.to(p.socketId).emit(Events.DEAL_BATCH, { cards: slice });
+      }
+
+      // Start timer for initial set phase
+      startTimer(room, io, handleTimerTimeout);
+    } else {
+      // Not all players ready yet, just emit the ready state
+      io.to(roomId).emit(Events.NEXT_ROUND_READY_UPDATE, { 
+        readyPlayers: [...room.nextRoundReady],
+        allReady: false
+      });
     }
 
-    // Start timer for initial set phase
-    startTimer(room, io, handleTimerTimeout);
-  } else {
-    // Not all players ready yet, just emit the ready state
-    io.to(roomId).emit(Events.NEXT_ROUND_READY_UPDATE, { 
-      readyPlayers: [...room.nextRoundReady],
-      allReady: false
-    });
+    emitRoomState(io, roomId);
+    return;
   }
 
-  emitRoomState(io, roomId);
+  // If we're in any other phase, don't allow starting
+  return socket.emit(Events.ERROR, { message: "Can only start round from lobby or after reveal" });
 }
 
 /* ---------------- Legacy single-action handlers (kept for manual testing) ---------------- */

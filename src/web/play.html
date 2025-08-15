@@ -430,16 +430,23 @@
     function log(m){ $('log').textContent += m + "\n"; }
 
     socket = io("/", { auth:{ token } });
-    socket.on('connect', ()=>{
+    socket.on('connect', () => {
       $('conn').textContent='connected';
       $('roomPill').textContent = roomId;
       // (re)join room with myName
       socket.emit("room:join", { roomId, name: myName });
+      // Reset next round ready state
+      nextRoundReady.clear();
+      updateStartButton();
     });
     socket.on('disconnect', ()=> $('conn').textContent='disconnected');
     socket.on("auth:ok", (x)=>{ myUserId = x?.userId || myUserId; });
 
-    socket.on("room:state", (s)=>{ setPhase(s.phase); log("STATE\n"+JSON.stringify(s,null,2)); });
+    socket.on("room:state", (s)=>{ 
+      setPhase(s.phase); 
+      log("STATE\n"+JSON.stringify(s,null,2)); 
+      updateStartButton();
+    });
     socket.on("round:start", ({round})=>{
       console.log("Round start:", round);
       myBoard={top:[],middle:[],bottom:[]}; myDiscards=[]; staged={placements:[],discard:null}; lastBatch=[];
@@ -473,7 +480,15 @@
     // Function to update start button text and state
     function updateStartButton() {
       const startBtn = $('start');
-      if (currentPhase === 'reveal') {
+      if (currentPhase === 'lobby') {
+        if (nextRoundReady.has(myUserId)) {
+          startBtn.textContent = 'Waiting for opponent...';
+          startBtn.disabled = true;
+        } else {
+          startBtn.textContent = 'Ready';
+          startBtn.disabled = false;
+        }
+      } else if (currentPhase === 'reveal') {
         if (nextRoundReady.has(myUserId)) {
           startBtn.textContent = 'Waiting for opponent...';
           startBtn.disabled = true;
