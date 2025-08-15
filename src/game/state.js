@@ -9,7 +9,7 @@ const TIMER_UPDATE_INTERVAL = 16; // 16ms for 60fps smooth animation
 export function createRoom(roomId) {
   return {
     id: roomId,
-    players: new Map(), // userId -> { userId, name, socketId, board, hand, discards, ready, readyForNextRound, finalBoard }
+    players: new Map(), // userId -> { userId, name, socketId, board, hand, discards, ready }
     round: 0,
     seed: null,
     phase: "lobby", // lobby | initial-set | round | reveal
@@ -31,18 +31,14 @@ export function startRound(room) {
   room.roundIndex = 0;
   room.seed = `${room.id}:${room.round}:${Date.now()}`;
   room.sharedDeck = shuffleDeterministic(makeDeck(), room.seed);
-  
-  // Reset player state for new round
+
   for (const p of room.players.values()) {
     p.board = { top: [], middle: [], bottom: [] };
     p.hand = [];
     p.discards = [];
     p.ready = false;
-    p.readyForNextRound = false;
     p.currentDeal = [];
-    p.finalBoard = null; // Will be set at reveal stage
   }
-  
   dealToAll(room, rules.deal.initialSetCount);
 }
 

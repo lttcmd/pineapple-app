@@ -519,13 +519,6 @@
       socket.on("round:reveal", (payload) => {
         log("REVEAL\n" + JSON.stringify(payload, null, 2));
         if (myUserId) renderRevealPanel(myUserId, payload);
-        
-        // Submit final board for scoring
-        socket.emit("action:reveal-board", {
-          roomId,
-          board: myBoard,
-          discards: myDiscards
-        });
       });
 
       socket.on("error:msg", (e) => log("ERROR " + e.message));
