@@ -101,10 +101,7 @@
     let myPlaced = { top:0, middle:0, bottom:0 };
     let selected = new Set();
     let staged = { placements: [], discard: null }; // <-- batch
-    
-    // Next round state
-    let nextRoundReadyPlayers = new Set();
-    let hasClickedNextRound = false;
+    let currentPhase = 'lobby';
 
     const $ = (id) => document.getElementById(id);
     const log = (m) => { $('log').textContent += m + "\\n"; };
@@ -195,6 +192,7 @@
 
       socket.on("room:state", (s) => {
         setPhase(s.phase); setRoomLabel(s.roomId||'—');
+        currentPhase = s.phase || 'lobby';
         const meName = $('name').value.trim() || 'Player';
         const me = s.players.find(p => p.name === meName);
         if (me) { myPlaced.top=me.placed.top; myPlaced.middle=me.placed.middle; myPlaced.bottom=me.placed.bottom; setPlacedLabel(); }
@@ -206,23 +204,7 @@
         renderHand(); log("DEAL " + JSON.stringify(cards));
       });
 
-      socket.on("round:reveal", (payload) => { 
-        log("REVEAL\n" + JSON.stringify(payload, null, 2)); 
-        // Show next round button
-        $('start').textContent = 'NEXT ROUND';
-      });
-      
-      // Handle next round ready updates
-      socket.on("round:next-ready", (data) => {
-        nextRoundReadyPlayers = new Set(data.readyPlayers);
-        log(`Next round ready: ${data.readyPlayers.length} players`);
-        
-        // If all players are ready, the round will start automatically
-        if (data.allPlayersReady) {
-          hasClickedNextRound = false;
-          $('start').textContent = 'Starting...';
-        }
-      });
+      socket.on("round:reveal", (payload) => { log("REVEAL\n" + JSON.stringify(payload, null, 2)); });
 
       socket.on("error:msg", (e) => log("ERROR " + e.message));
     };
@@ -238,13 +220,11 @@
     $('start').onclick = () => {
       if(!socket) return alert('Connect first');
       const roomId=$('room').value.trim(); if(!roomId) return alert('Enter ROOMID');
-      
-      if (!hasClickedNextRound) {
-        socket.emit("round:next-request", { roomId });
-        hasClickedNextRound = true;
-        $('start').textContent = 'WAITING...';
-        $('start').disabled = true;
+      // Basic check - this is a testing interface so we'll just warn
+      if (currentPhase && currentPhase !== 'reveal') {
+        console.log('Warning: Starting round outside of reveal phase');
       }
+      socket.emit("round:start",{ roomId });
     };
 
     // Staging helpers

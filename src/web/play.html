@@ -179,11 +179,8 @@
     let staged = { placements:[], discard:null };
     let lastBatch = [];
     const totals = new Map();
+    const nextRoundReady = new Set(); // Set of userIds ready for next round
     
-    // Next round state
-    let nextRoundReadyPlayers = new Set();
-    let hasClickedNextRound = false;
-
     // Timer state - now controlled by server
     let serverTimeLeft = 15000; // 15 seconds in milliseconds
     let isTimerActive = false;
@@ -323,12 +320,11 @@
 
     // buttons
     $('start').onclick = () => {
-      if (!hasClickedNextRound) {
-        socket.emit("round:next-request", { roomId });
-        hasClickedNextRound = true;
-        $('start').textContent = 'WAITING...';
-        $('start').disabled = true;
+      if (currentPhase !== 'reveal') {
+        alert('Can only start next round after reveal');
+        return;
       }
+      socket.emit("round:start", { roomId });
     };
  $('ready').onclick = () => {
   if (!socket) return alert('Connect first');
@@ -448,11 +444,9 @@
       console.log("Round start:", round);
       myBoard={top:[],middle:[],bottom:[]}; myDiscards=[]; staged={placements:[],discard:null}; lastBatch=[];
       $('revealPanel').textContent='—'; renderHand(); refreshBoard(); log("START round "+round);
-      // Reset next round state
-      nextRoundReadyPlayers = new Set();
-      hasClickedNextRound = false;
-      $('start').textContent = 'Start Round';
-      $('start').disabled = false;
+      // Reset next round ready state
+      nextRoundReady.clear();
+      updateStartButton();
     });
     socket.on("round:deal", ({cards})=>{
       lastBatch = cards.slice(); myHand = myHand.concat(cards); renderHand(); $('ready').disabled=!canSet(); log("DEAL "+JSON.stringify(cards));
@@ -462,23 +456,36 @@
       if (myUserId) renderRevealPanel(myUserId, payload);
       // reset staged so next hand starts clean
       staged={placements:[],discard:null}; $('ready').disabled=true;
-      // Show next round button
-      $('start').textContent = 'NEXT ROUND';
-      $('start').disabled = false;
+      // Reset next round ready state
+      nextRoundReady.clear();
+      updateStartButton();
     });
-    
-    // Handle next round ready updates
+
     socket.on("round:next-ready", (data) => {
-      nextRoundReadyPlayers = new Set(data.readyPlayers);
-      log(`Next round ready: ${data.readyPlayers.length} players`);
-      
-      // If all players are ready, the round will start automatically
-      if (data.allPlayersReady) {
-        hasClickedNextRound = false;
-        $('start').textContent = 'Starting...';
-        $('start').disabled = true;
+      nextRoundReady.clear();
+      if (data?.readyPlayers) {
+        data.readyPlayers.forEach(id => nextRoundReady.add(id));
       }
+      updateStartButton();
+      log("Next round ready update: " + [...nextRoundReady].join(', '));
     });
+
+    // Function to update start button text and state
+    function updateStartButton() {
+      const startBtn = $('start');
+      if (currentPhase === 'reveal') {
+        if (nextRoundReady.has(myUserId)) {
+          startBtn.textContent = 'Waiting for opponent...';
+          startBtn.disabled = true;
+        } else {
+          startBtn.textContent = 'Next Round';
+          startBtn.disabled = false;
+        }
+      } else {
+        startBtn.textContent = 'Start Round';
+        startBtn.disabled = false;
+      }
+    }
 
     // Handle auto-commit notification
     socket.on("action:applied", (data) => {
@@ -524,7 +531,7 @@
         document.body.style.backgroundColor = '#ff4444';
         setTimeout(() => {
           document.body.style.backgroundColor = '';
-        }, 300);
+        }, 500);
       }
     });
 

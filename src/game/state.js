@@ -22,8 +22,8 @@ export function createRoom(roomId) {
       intervalId: null,
       startTime: null
     },
-    // Next round state - track which players have clicked "next round"
-    nextRoundReady: new Set()
+    // Next round ready state
+    nextRoundReady: new Set() // Set of userIds ready for next round
   };
 }
 
@@ -31,21 +31,20 @@ export function startRound(room) {
   room.round += 1;
   room.phase = "initial-set";
   room.roundIndex = 0;
-  
-  // Clear next round ready state for new round
-  room.nextRoundReady.clear();
-  
-  // Clear all players' hands and boards
+  room.seed = `${room.id}:${room.round}:${Date.now()}`;
+  room.sharedDeck = shuffleDeterministic(makeDeck(), room.seed);
+
   for (const p of room.players.values()) {
-    p.hand = [];
     p.board = { top: [], middle: [], bottom: [] };
+    p.hand = [];
     p.discards = [];
     p.ready = false;
     p.currentDeal = [];
   }
   
-  // Generate new deck and deal initial cards
-  room.sharedDeck = shuffleDeterministic(makeDeck(), `${room.id}:${room.round}:${Date.now()}`);
+  // Reset next round ready state
+  room.nextRoundReady.clear();
+  
   dealToAll(room, rules.deal.initialSetCount);
 }
 
@@ -58,6 +57,10 @@ export function dealToAll(room, nCards) {
 
 export function allReady(room) {
   return [...room.players.values()].every(p => p.ready);
+}
+
+export function allReadyForNextRound(room) {
+  return [...room.players.values()].every(p => room.nextRoundReady.has(p.userId));
 }
 
 // Timer management functions
@@ -199,20 +202,4 @@ export function autoCommitPlayer(room, player) {
   console.log(`=== END AUTO-COMMIT ===`);
   
   return { autoPlacements, discards };
-}
-
-export function requestNextRound(room, playerId) {
-  // Add player to next round ready set
-  room.nextRoundReady.add(playerId);
-  
-  // Check if all players are ready for next round
-  const allPlayersReady = [...room.players.keys()].every(playerId => 
-    room.nextRoundReady.has(playerId)
-  );
-  
-  return {
-    playerReady: true,
-    allPlayersReady,
-    readyPlayers: [...room.nextRoundReady]
-  };
 }

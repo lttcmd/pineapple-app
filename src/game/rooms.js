@@ -2,7 +2,7 @@
 import { id } from "../utils/ids.js";
 import { mem } from "../store/mem.js";
 import rules from "./rules.js";
-import { createRoom, startRound, dealToAll, allReady, startTimer, stopTimer, autoCommitPlayer } from "./state.js";
+import { createRoom, startRound, dealToAll, allReady, allReadyForNextRound, startTimer, stopTimer, autoCommitPlayer } from "./state.js";
 import { Events } from "../net/events.js";
 import { validateBoard, settlePairwiseDetailed } from "./scoring.js";
 
@@ -191,41 +191,40 @@ export function startRoundHandler(io, socket, { roomId }) {
     return socket.emit(Events.ERROR, { message: "Need more players" });
   }
 
-  startRound(room);
-  io.to(roomId).emit(Events.START_ROUND, { round: room.round });
-
-  // Send initial 5 privately to each player (the last 5 dealt into their hand)
-  for (const p of room.players.values()) {
-    const slice = p.hand.slice(-rules.deal.initialSetCount);
-    p.currentDeal = slice;
-    io.to(p.socketId).emit(Events.DEAL_BATCH, { cards: slice });
+  // Only allow starting if we're in reveal phase
+  if (room.phase !== "reveal") {
+    return socket.emit(Events.ERROR, { message: "Can only start next round after reveal" });
   }
-
-  // Start timer for initial set phase
-  startTimer(room, io, handleTimerTimeout);
-
-  emitRoomState(io, roomId);
-}
-
-/** Handle next round request - requires all players to click */
-export function nextRoundRequestHandler(io, socket, { roomId }) {
-  const room = mem.rooms.get(roomId);
-  if (!room) return socket.emit(Events.ERROR, { message: "Room not found" });
 
   const playerId = socket.user.sub;
-  const result = requestNextRound(room, playerId);
   
-  // Notify all players about the next round request
-  io.to(roomId).emit(Events.NEXT_ROUND_READY, {
-    playerId,
-    readyPlayers: result.readyPlayers,
-    allPlayersReady: result.allPlayersReady
-  });
+  // Add this player to the ready set
+  room.nextRoundReady.add(playerId);
   
-  // If all players are ready, start the next round
-  if (result.allPlayersReady) {
-    startRoundHandler(io, socket, { roomId });
+  // Check if all players are ready
+  if (allReadyForNextRound(room)) {
+    // All players ready, start the round
+    startRound(room);
+    io.to(roomId).emit(Events.START_ROUND, { round: room.round });
+
+    // Send initial 5 privately to each player (the last 5 dealt into their hand)
+    for (const p of room.players.values()) {
+      const slice = p.hand.slice(-rules.deal.initialSetCount);
+      p.currentDeal = slice;
+      io.to(p.socketId).emit(Events.DEAL_BATCH, { cards: slice });
+    }
+
+    // Start timer for initial set phase
+    startTimer(room, io, handleTimerTimeout);
+  } else {
+    // Not all players ready yet, just emit the ready state
+    io.to(roomId).emit(Events.NEXT_ROUND_READY_UPDATE, { 
+      readyPlayers: [...room.nextRoundReady],
+      allReady: false
+    });
   }
+
+  emitRoomState(io, roomId);
 }
 
 /* ---------------- Legacy single-action handlers (kept for manual testing) ---------------- */

@@ -182,16 +182,10 @@
     let myHand = [];
     let myBoard = { top: [], middle: [], bottom: [] };
     let myDiscards = [];
-    let staged  = { placements: [], discard: null };
-    let placedCounts = { top:0, middle:0, bottom:0 };
-
-    let currentPhase = 'lobby';
-    let lastBatch = [];   // newest deal (5 then 3)
-    const totals = new Map(); // running totals by userId (client-side)
-    
-    // Next round state
-    let nextRoundReadyPlayers = new Set();
-    let hasClickedNextRound = false;
+    let staged = { placements: [], discard: null };
+    let lastBatch = [];
+    const totals = new Map();
+    const nextRoundReady = new Set(); // Set of userIds ready for next round
 
     const $ = (id) => document.getElementById(id);
     const log = (m) => { $('log').textContent += m + "\\n"; };
@@ -500,29 +494,6 @@
         $('revealPanel').textContent = '—';
         renderHand(); refreshBoard();
         log("START round " + round);
-        // Reset next round state
-        nextRoundReadyPlayers = new Set();
-        hasClickedNextRound = false;
-        $('start').textContent = 'Start Round';
-      });
-
-      socket.on("round:reveal", (payload) => {
-        log("REVEAL\n" + JSON.stringify(payload, null, 2));
-        if (myUserId) renderRevealPanel(myUserId, payload);
-        // Show next round button
-        $('start').textContent = 'NEXT ROUND';
-      });
-      
-      // Handle next round ready updates
-      socket.on("round:next-ready", (data) => {
-        nextRoundReadyPlayers = new Set(data.readyPlayers);
-        log(`Next round ready: ${data.readyPlayers.length} players`);
-        
-        // If all players are ready, the round will start automatically
-        if (data.allPlayersReady) {
-          hasClickedNextRound = false;
-          $('start').textContent = 'Starting...';
-        }
       });
 
       socket.on("room:create", ({ roomId }) => {
@@ -543,8 +514,37 @@
         log("DEAL " + JSON.stringify(cards));
       });
 
+      socket.on("round:reveal", (payload) => {
+        log("REVEAL\n" + JSON.stringify(payload, null, 2));
+        if (myUserId) renderRevealPanel(myUserId, payload);
+        // Reset next round ready state
+        nextRoundReady.clear();
+        updateStartButton();
+      });
+
+      socket.on("round:next-ready", (data) => {
+        nextRoundReady.clear();
+        if (data?.readyPlayers) {
+          data.readyPlayers.forEach(id => nextRoundReady.add(id));
+        }
+        updateStartButton();
+        log("Next round ready update: " + [...nextRoundReady].join(', '));
+      });
+
       socket.on("error:msg", (e) => log("ERROR " + e.message));
     };
+
+    // Function to update start button text and state
+    function updateStartButton() {
+      const startBtn = $('start');
+      if (nextRoundReady.has(myUserId)) {
+        startBtn.textContent = 'Waiting for opponent...';
+        startBtn.disabled = true;
+      } else {
+        startBtn.textContent = 'Next Round';
+        startBtn.disabled = false;
+      }
+    }
 
     // Room buttons
     $('create').onclick = () => { if (!socket) return alert('Connect first'); socket.emit("room:create"); };
@@ -559,13 +559,9 @@
       if (!socket) return alert('Connect first');
       const roomId = $('room').value.trim();
       if (!roomId) return alert('Enter ROOMID');
-      
-      if (!hasClickedNextRound) {
-        socket.emit("round:next-request", { roomId });
-        hasClickedNextRound = true;
-        $('start').textContent = 'WAITING...';
-        $('start').disabled = true;
-      }
+      socket.emit("round:start", { roomId });
+      // Update button state immediately
+      updateStartButton();
     };
   </script>
 </body>
