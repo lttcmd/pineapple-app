@@ -1,4 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Animated } from "react-native";
+
+// Helper function to compute total committed cards
+const committedTotal = (b) => b.top.length + b.middle.length + b.bottom.length;
 import { View, Text, Button, FlatList, findNodeHandle, UIManager, Pressable } from "react-native";
 import * as Haptics from "expo-haptics";
 import { onSocketEvent, emit } from "../net/socket";
@@ -10,17 +14,15 @@ import BackButton from "../components/BackButton";
 import { useDrag } from "../drag/DragContext";
 import { play as playSfx } from "../sound/sfx";
 
-// constants
-const SLOT_W = 62;   // +~20%
-const SLOT_H = 92;
-const SLOT_GAP = 3;  // tighter
-const ROW_GAP = 6;   // vertical gap between rows
+  // constants
+  const SLOT_W = 59;   // 4% smaller (62 * 0.96)
+  const SLOT_H = 88;   // 4% smaller (92 * 0.96)
+  const SLOT_GAP = 3;  // tighter
+  const ROW_GAP = 6;   // vertical gap between rows
 const BOARD_HEIGHT = SLOT_H * 3 + ROW_GAP * 2; // fixed board area height (3 rows)
 const CONTROLS_HEIGHT = 80; // pinned bottom bar height incl. padding
 const HAND_HEIGHT = SLOT_H + 24; // fixed hand area height to prevent layout jump
-const TIMER_DURATION = 15; // 15 seconds
-const TIMER_HEIGHT = 4; // height of the timer bar
-const TIMER_UPDATE_INTERVAL = 16; // 16ms for 60fps smooth animation
+
 
 // Foul effect - generate random transformations for "broken" cards
 function getFoulTransform(index) {
@@ -37,6 +39,31 @@ function getFoulTransform(index) {
   };
 }
 
+// Rainbow glow effect for Fantasy Land
+function useRainbowGlow() {
+  const animatedValue = useRef(new Animated.Value(0)).current;
+  
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.timing(animatedValue, {
+        toValue: 1,
+        duration: 2000,
+        useNativeDriver: false,
+      })
+    );
+    animation.start();
+    
+    return () => animation.stop();
+  }, [animatedValue]);
+  
+  const rainbowColor = animatedValue.interpolate({
+    inputRange: [0, 0.16, 0.33, 0.5, 0.66, 0.83, 1],
+    outputRange: ['#ff0000', '#ff8000', '#ffff00', '#00ff00', '#0080ff', '#8000ff', '#ff0000'],
+  });
+  
+  return rainbowColor;
+}
+
 function NameWithScore({ name, score, delta }) {
   const deltaText = typeof delta === 'number' ? (delta >= 0 ? `+${delta}` : `${delta}`) : null;
   const deltaColor = deltaText && deltaText.startsWith('+') ? colors.ok || '#2e7d32' : '#C62828';
@@ -50,26 +77,47 @@ function NameWithScore({ name, score, delta }) {
   );
 }
 
-function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onMidLayout, onBotLayout, topAnchorRef, midAnchorRef, botAnchorRef, isFouled }) {
+function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onMidLayout, onBotLayout, topAnchorRef, midAnchorRef, botAnchorRef, isFouled, inFantasyland }) {
   const tiny = true;
-  const capRow = (ref, onLayout, anchorRef, cards, cap, rowOffset = 0) => (
-    <View ref={ref} onLayout={onLayout} style={{ flexDirection: "row", alignSelf: "center", marginBottom: 2, position: 'relative' }}>
-      {/* top-right anchor marker inside the row */}
-      <View ref={anchorRef} pointerEvents="none" style={{ position: 'absolute', top: 0, right: 0, width: 1, height: 1 }} />
-      {Array.from({ length: cap }).map((_, i) => {
-        const foulStyle = isFouled ? getFoulTransform(rowOffset + i) : {};
-        return (
-          <View key={"opp_"+i} style={[{ marginRight: 3 }, foulStyle]}>
-            {hidden ? (
-              <View style={{ width: 40, height: 56, borderRadius: 8, borderWidth: 2, borderColor: colors.outline, backgroundColor: colors.panel2 }} />
-            ) : (
-              cards[i] ? <Card card={cards[i]} tiny noMargin /> : <View style={{ width: 40, height: 56 }} />
-            )}
-          </View>
-        );
-      })}
-    </View>
-  );
+  const rainbowColor = useRainbowGlow();
+      const capRow = (ref, onLayout, anchorRef, cards, cap, rowOffset = 0) => (
+      <View ref={ref} onLayout={onLayout} style={{ 
+        flexDirection: "row", 
+        alignSelf: "center", 
+        marginBottom: 2, 
+        position: 'relative',
+        // Rainbow glow for Fantasy Land
+        ...(inFantasyland && {
+          shadowColor: rainbowColor,
+          shadowOffset: { width: 0, height: 0 },
+          shadowOpacity: 0.8,
+          shadowRadius: 8,
+          elevation: 8,
+        })
+      }}>
+        {/* top-right anchor marker inside the row */}
+        <View ref={anchorRef} pointerEvents="none" style={{ position: 'absolute', top: 0, right: 0, width: 1, height: 1 }} />
+        {Array.from({ length: cap }).map((_, i) => {
+          const foulStyle = isFouled ? getFoulTransform(rowOffset + i) : {};
+          return (
+            <View key={"opp_"+i} style={[{ marginRight: 3 }, foulStyle]}>
+              {hidden ? (
+                <Animated.View style={{ 
+                  width: 40, 
+                  height: 56, 
+                  borderRadius: 8, 
+                  borderWidth: 2, 
+                  borderColor: inFantasyland ? rainbowColor : colors.outline, 
+                  backgroundColor: colors.panel2 
+                }} />
+              ) : (
+                cards[i] ? <Card card={cards[i]} tiny noMargin /> : <View style={{ width: 40, height: 56 }} />
+              )}
+            </View>
+          );
+        })}
+      </View>
+    );
   return (
     <View style={{ paddingVertical: 4 }}>
       {capRow(topRef, onTopLayout, topAnchorRef, board.top || [], 3, 0)}
@@ -120,36 +168,49 @@ function ScoreBubbles({ show, playerAnchors, oppAnchors, detail }) {
 
 export default function Play({ route }) {
   const { roomId } = route.params || {};
-  const {
-    board,
-    hand,
-    staged,
-    turnCap,
-    canCommit,
-    applyEvent,
-    setPlacement,
-    unstage,
-    commitTurnLocal,
-    players,
-    reveal,
-    discards,
-  } = useGame();
+  
+
+  
+  // Use specific selectors to prevent unnecessary re-renders
+  const board = useGame(state => state.board);
+  const hand = useGame(state => state.hand);
+  const staged = useGame(state => state.staged);
+  const players = useGame(state => state.players);
+  const reveal = useGame(state => state.reveal);
+  const discards = useGame(state => state.discards);
+  const nextRoundReady = useGame(state => state.nextRoundReady);
+  const inFantasyland = useGame(state => state.inFantasyland);
+  const currentRound = useGame(state => state.currentRound);
+  
+  // Get functions that don't change
+  const { applyEvent, setPlacement, unstage, commitTurnLocal } = useGame();
+  
+  // Compute derived values
+  const turnCap = useGame(state => {
+    if (state.inFantasyland) {
+      return 13; // Fantasyland: place 13 cards
+    }
+    // Normal mode: round 1 = 5 cards, rounds 2-5 = 2 cards
+    const isRound1 = state.currentRound === 1;
+    return isRound1 ? 5 : 2;
+  });
+  
+  const canCommit = useGame(state => {
+    if (state.inFantasyland) {
+      return state.staged.placements.length === 13;
+    }
+    // Normal mode: round 1 = 5 cards, rounds 2-5 = 2 cards
+    const isRound1 = state.currentRound === 1;
+    const required = isRound1 ? 5 : 2;
+    return state.staged.placements.length === required;
+  });
 
 
 
   const { drag } = useDrag();
 
-  // Timer state - smooth client-side animation
-  const [serverTimeLeft, setServerTimeLeft] = useState(TIMER_DURATION * 1000);
-  const [smoothTimeLeft, setSmoothTimeLeft] = useState(TIMER_DURATION * 1000);
-  const [isTimerActive, setIsTimerActive] = useState(false);
   const [readyPlayers, setReadyPlayers] = useState(new Set());
-  const [showAutoCommitFlash, setShowAutoCommitFlash] = useState(false);
   const [forceUpdate, setForceUpdate] = useState(0);
-  
-  // Next round state
-  const [nextRoundReadyPlayers, setNextRoundReadyPlayers] = useState(new Set());
-  const [hasClickedNextRound, setHasClickedNextRound] = useState(false);
 
   // measure rows for hover/drop (player)
   const topRef = useRef(null), midRef = useRef(null), botRef = useRef(null);
@@ -179,36 +240,20 @@ export default function Play({ route }) {
   const onOMidLayout = () => measureAnchor(oMidAnchorRef, 'middle', setOppAnchors);
   const onOBotLayout = () => measureAnchor(oBotAnchorRef, 'bottom', setOppAnchors);
 
-  // Smooth timer animation at 60fps
-  useEffect(() => {
-    if (!isTimerActive) return;
-    
-    const interval = setInterval(() => {
-      setSmoothTimeLeft(prev => {
-        const newTime = prev - 16; // 16ms = 60fps
-        return Math.max(0, newTime);
-      });
-    }, 16);
-    
-    return () => clearInterval(interval);
-  }, [isTimerActive]);
 
-  // Sync smooth timer with server timer
-  useEffect(() => {
-    setSmoothTimeLeft(serverTimeLeft);
-  }, [serverTimeLeft]);
+
+
 
   useEffect(() => {
+    console.log('🎯 Socket event useEffect running');
     const off = onSocketEvent((evt, data) => {
+      console.log('🎯 Socket event received:', evt);
       
       if (evt === "round:start") {
         playSfx('roundstart');
         // Clear previous reveal/score UI when a new round begins
         setShowScore(false);
         setScoreDetail(null);
-        // Reset next round state
-        setNextRoundReadyPlayers(new Set());
-        setHasClickedNextRound(false);
       }
       if (evt === 'round:reveal') {
         const meId = useGame.getState().userId;
@@ -233,29 +278,14 @@ export default function Play({ route }) {
       if (evt === 'action:applied' && data?.autoCommitted) {
         // Handle auto-commit punishment
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        
-        // Flash the timer bar red briefly to show punishment - exactly 300ms
-        setShowAutoCommitFlash(true);
-        setTimeout(() => setShowAutoCommitFlash(false), 300);
-        
-        // Force a re-render to ensure UI updates
-        setTimeout(() => {
-          setForceUpdate(prev => prev + 1);
-        }, 50);
       }
-      if (evt === 'round:next-ready') {
-        // Handle next round ready updates
-        setNextRoundReadyPlayers(new Set(data.readyPlayers));
-        
-        // If all players are ready, the round will start automatically
-        if (data.allPlayersReady) {
-          setHasClickedNextRound(false);
-        }
-      }
+      
+
+      
       applyEvent(evt, data);
     });
     return () => off();
-  }, [applyEvent, players]);
+  }, []); // Remove applyEvent from dependencies to prevent infinite re-renders
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -277,11 +307,13 @@ export default function Play({ route }) {
       ...staged.placements.map(p => p.card),
     ]);
     if (staged.discard) taken.add(staged.discard);
-    return hand.filter(c => !taken.has(c));
-  }, [hand, board, staged]);
+    const result = hand.filter(c => !taken.has(c));
+    console.log('🎯 visibleHand calculated - inFantasyland:', inFantasyland, 'hand.length:', hand.length, 'result.length:', result.length);
+    return result;
+  }, [hand, board.top, board.middle, board.bottom, staged.placements, staged.discard, inFantasyland]);
 
   // opponent
-  const meId = useMemo(() => useGame.getState().userId, []);
+  const meId = useGame(state => state.userId);
   const me = useMemo(() => players.find(p => p.userId === meId) || { name: 'You', score: 0 }, [players, meId]);
   const others = useMemo(() => players.filter(p => p.userId !== meId), [players, meId]);
   const opponent = useMemo(() => {
@@ -306,12 +338,7 @@ export default function Play({ route }) {
     return null; // not used here; kept previous logic below
   }
 
-  const onMove = ({ x, y }) => {
-    // re-measure anchors if missing
-    if (!playerAnchors.top || !playerAnchors.middle || !playerAnchors.bottom) {
-      onTopLayout(); onMidLayout(); onBotLayout();
-    }
-  };
+
 
   // Keep previous drop logic using old measurement helpers
   function inRectOld(r, x, y, pad = 36) {
@@ -346,20 +373,30 @@ export default function Play({ route }) {
   }, []);
 
   const onDrop = ({ card, pageX, pageY }) => {
+    console.log('🎯 onDrop called - inFantasyland:', inFantasyland, 'card:', card);
     const z = zoneAtOld(pageX, pageY) || null;
-    if (z === "top")    { setPlacement("top", card); Haptics.selectionAsync(); playSfx('place'); return; }
-    if (z === "middle") { setPlacement("middle", card); Haptics.selectionAsync(); playSfx('place'); return; }
-    if (z === "bottom") { setPlacement("bottom", card); Haptics.selectionAsync(); playSfx('place'); return; }
+    console.log('🎯 Drop zone:', z);
+    if (z === "top")    { console.log('🎯 Placing card in top'); setPlacement("top", card); Haptics.selectionAsync(); playSfx('place'); return; }
+    if (z === "middle") { console.log('🎯 Placing card in middle'); setPlacement("middle", card); Haptics.selectionAsync(); playSfx('place'); return; }
+    if (z === "bottom") { console.log('🎯 Placing card in bottom'); setPlacement("bottom", card); Haptics.selectionAsync(); playSfx('place'); return; }
+    console.log('🎯 No valid zone, unstaging card');
     return unstage(card);
   };
 
   const onCommit = () => {
-    if (!canCommit()) return;
-    const { currentDeal, userId } = useGame.getState();
+    if (!canCommit) return;
+    const state = useGame.getState();
+    const { currentDeal, userId, inFantasyland } = state;
     const placedSet = new Set(staged.placements.map(p => p.card));
-    const leftover = (currentDeal || []).find(c => !placedSet.has(c)) || null;
+    
+    let leftover = null;
+    if (!inFantasyland) {
+      // Normal mode: auto-discard leftover card
+      leftover = (currentDeal || []).find(c => !placedSet.has(c)) || null;
+    }
+    // In fantasyland mode: no discards (1 card stays in hand)
 
-    emit("action:ready", { roomId, placements: staged.placements, discard: leftover || undefined, userId });
+    emit("action:ready", { roomId, placements: staged.placements, discard: inFantasyland ? undefined : (leftover || undefined), userId });
     playSfx('commit');
     commitTurnLocal(leftover);
     
@@ -381,7 +418,10 @@ export default function Play({ route }) {
         setIsTimerActive(data.isActive);
       }
       if (evt === "timer:start") {
-        setServerTimeLeft(TIMER_DURATION * 1000);
+        // Store the total duration when timer starts
+        const duration = data.timeLeft || (TIMER_DURATION * 1000);
+        setTotalTimerDuration(duration);
+        setServerTimeLeft(duration);
         setIsTimerActive(true);
         setReadyPlayers(new Set());
       }
@@ -399,9 +439,15 @@ export default function Play({ route }) {
 
 
 
-  const needed = turnCap();
+  const needed = inFantasyland ? 13 : (committedTotal(board) === 0 ? 5 : 2);
   const stagedCount = staged.placements.length;
   const canPress = stagedCount === needed;
+  
+  // console.log('🎯 Render - inFantasyland:', inFantasyland, 'needed:', needed, 'stagedCount:', stagedCount, 'canPress:', canPress);
+
+
+
+
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }} pointerEvents="box-none">
@@ -409,7 +455,9 @@ export default function Play({ route }) {
       {/* Opponent area */}
       <View style={{ paddingTop: 80, paddingHorizontal: 12 }}>
         {others[0] ? (
-          <NameWithScore name={others[0].name} score={others[0].score} delta={reveal?.results?.[others[0].userId]} />
+          <View style={{ alignItems: "center" }}>
+            <NameWithScore name={others[0].name} score={others[0].score} delta={reveal?.results?.[others[0].userId]} />
+          </View>
         ) : null}
         <OpponentBoard
           board={opponentBoard}
@@ -424,6 +472,7 @@ export default function Play({ route }) {
           midAnchorRef={oMidAnchorRef}
           botAnchorRef={oBotAnchorRef}
           isFouled={showScore && scoreDetail?.b?.foul}
+          inFantasyland={others[0]?.inFantasyland || false}
         />
 
 
@@ -433,6 +482,16 @@ export default function Play({ route }) {
       <View style={{ flex: 1, justifyContent: "center" }}>
         <View style={{ alignSelf: "center", marginBottom: 8 }}>
           <NameWithScore name={me.name || 'You'} score={me.score} delta={reveal?.results?.[me.userId]} />
+          {currentRound && (
+            <Text style={{ 
+              textAlign: 'center', 
+              color: colors.sub, 
+              fontSize: 14, 
+              marginTop: 4 
+            }}>
+              Round {currentRound} {inFantasyland ? '(Fantasy Land)' : ''}
+            </Text>
+          )}
         </View>
         <View style={{ alignSelf: "center", height: BOARD_HEIGHT, paddingHorizontal: 6, justifyContent: "center" }}>
           {/* Player rows with in-row anchors */}
@@ -442,13 +501,13 @@ export default function Play({ route }) {
             staged={stagedTop}
             zoneRef={topRef}
             highlightRow={hover === "top"}
-            onMove={onMove}
             onDrop={onDrop}
             onLayout={onTopLayout}
             compact
             anchorRef={topAnchorRef}
             isFouled={showScore && scoreDetail?.a?.foul}
             rowOffset={0}
+            inFantasyland={inFantasyland}
           />
           <Row
             capacity={5}
@@ -456,13 +515,13 @@ export default function Play({ route }) {
             staged={stagedMiddle}
             zoneRef={midRef}
             highlightRow={hover === "middle"}
-            onMove={onMove}
             onDrop={onDrop}
             onLayout={onMidLayout}
             compact
             anchorRef={midAnchorRef}
             isFouled={showScore && scoreDetail?.a?.foul}
             rowOffset={3}
+            inFantasyland={inFantasyland}
           />
           <Row
             capacity={5}
@@ -470,31 +529,68 @@ export default function Play({ route }) {
             staged={stagedBottom}
             zoneRef={botRef}
             highlightRow={hover === "bottom"}
-            onMove={onMove}
             onDrop={onDrop}
             onLayout={onBotLayout}
             compact
             anchorRef={botAnchorRef}
             isFouled={showScore && scoreDetail?.a?.foul}
             rowOffset={8}
+            inFantasyland={inFantasyland}
           />
         </View>
         
 
 
-        <View style={{ paddingHorizontal: 6, marginTop: 12, height: HAND_HEIGHT, justifyContent: "center" }}>
-          <FlatList
-            data={visibleHand}
-            horizontal
-            scrollEnabled
-            keyExtractor={(c, i) => c + ":" + i}
-            renderItem={({ item }) => (
-              <View style={{ marginRight: SLOT_GAP }} pointerEvents="box-none">
-                <DraggableCard card={item} small onMove={onMove} onDrop={onDrop} />
+        <View style={{ 
+          paddingHorizontal: 6, 
+          marginTop: 12, 
+          height: inFantasyland ? HAND_HEIGHT * 2 : HAND_HEIGHT, 
+          justifyContent: "center" 
+        }}>
+          {inFantasyland ? (
+            // Always 2 rows of 7 cards for fantasyland with minimal spacing
+            <View style={{ flex: 1, justifyContent: "center" }}>
+              <View style={{ flexDirection: "row", justifyContent: "center", marginBottom: 1 }}>
+                {visibleHand.slice(0, 7).map((card, index) => (
+                  <View key={card + ":" + index} style={{ marginRight: 1 }} pointerEvents="box-none">
+                    <DraggableCard card={card} small onDrop={onDrop} />
+                  </View>
+                ))}
               </View>
-            )}
-            contentContainerStyle={{ paddingVertical: 2, justifyContent: "center", flexGrow: 1, alignItems: "center" }}
-          />
+              <View style={{ flexDirection: "row", justifyContent: "center" }}>
+                {visibleHand.slice(7, 14).map((card, index) => (
+                  <View key={card + ":" + (index + 7)} style={{ marginRight: 1 }} pointerEvents="box-none">
+                    <DraggableCard card={card} small onDrop={onDrop} />
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : (
+            // Single row for normal hands
+            <FlatList
+              data={visibleHand}
+              horizontal
+              scrollEnabled
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(c, i) => c + ":" + i}
+              renderItem={({ item }) => (
+                <View style={{ marginRight: SLOT_GAP }} pointerEvents="box-none">
+                  <DraggableCard card={item} small onDrop={onDrop} />
+                </View>
+              )}
+              contentContainerStyle={{ 
+                paddingVertical: 2, 
+                justifyContent: "center", 
+                alignItems: "center",
+                minWidth: "100%"
+              }}
+              getItemLayout={(data, index) => ({
+                length: SLOT_W + SLOT_GAP,
+                offset: (SLOT_W + SLOT_GAP) * index,
+                index,
+              })}
+            />
+          )}
         </View>
 
         {/* Spacer to keep room for pinned controls */}
@@ -526,25 +622,27 @@ export default function Play({ route }) {
           {reveal ? (
             <Pressable
               onPress={() => {
-                if (!hasClickedNextRound) {
-                  emit("round:next-request", { roomId });
-                  setHasClickedNextRound(true);
-                  playSfx('roundstart');
-                }
+                emit("round:start", { roomId });
               }}
+              disabled={nextRoundReady.has(meId)}
               style={{
                 paddingVertical: 12,
                 paddingHorizontal: 24,
                 borderRadius: 25,
-                backgroundColor: hasClickedNextRound ? "#666" : "#2e7d32",
-                borderWidth: 0,
+                backgroundColor: nextRoundReady.has(meId) ? colors.outline : "#2e7d32",
+                borderWidth: nextRoundReady.has(meId) ? 1 : 0,
+                borderColor: colors.outline,
                 minWidth: 140,
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <Text style={{ color: "#fff", fontSize: 16, fontWeight: "600" }}>
-                {hasClickedNextRound ? "WAITING..." : "NEXT ROUND"}
+              <Text style={{ 
+                color: nextRoundReady.has(meId) ? colors.sub : "#fff", 
+                fontSize: 16, 
+                fontWeight: "600" 
+              }}>
+                {nextRoundReady.has(meId) ? "WAITING..." : "NEXT ROUND"}
               </Text>
             </Pressable>
           ) : (
@@ -588,28 +686,9 @@ export default function Play({ route }) {
         )}
       </View>
 
-      {/* Timer bar at the very bottom */}
-      {isTimerActive && !showScore && (
-        <View style={{ 
-          position: "absolute", 
-          left: 0, 
-          right: 0, 
-          bottom: 0, 
-          height: TIMER_HEIGHT,
-          backgroundColor: colors.bg,
-          overflow: 'hidden'
-        }}>
-          <View style={{
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            height: TIMER_HEIGHT,
-            width: `${(smoothTimeLeft / (TIMER_DURATION * 1000)) * 100}%`,
-            backgroundColor: showAutoCommitFlash ? '#FF4444' : '#FFD700', // Red when flashing, yellow normally
-            borderRadius: 0
-          }} />
-        </View>
-      )}
+
+
+
 
       {/* Row score bubbles positioned at row corners */}
       <ScoreBubbles show={showScore} playerAnchors={playerAnchors} oppAnchors={oppAnchors} detail={scoreDetail} />
@@ -670,18 +749,19 @@ function Row({
   staged,
   zoneRef,
   highlightRow,
-  onMove,
   onDrop,
   onLayout,
   compact = false,
   anchorRef,
   isFouled = false,
   rowOffset = 0,
+  inFantasyland = false,
 }) {
   const committedCount = committed.length;
   const stagedCount = staged.length;
   const remaining = Math.max(0, capacity - committedCount - stagedCount);
   const gap = compact ? 2 : SLOT_GAP;
+  const rainbowColor = useRainbowGlow();
 
   return (
     <View style={{ marginBottom: ROW_GAP }} pointerEvents="box-none">
@@ -698,6 +778,14 @@ function Row({
           borderWidth: highlightRow ? 2 : 0,
           borderColor: highlightRow ? colors.accent : "transparent",
           position: 'relative',
+          // Rainbow glow for Fantasy Land
+          ...(inFantasyland && {
+            shadowColor: rainbowColor,
+            shadowOffset: { width: 0, height: 0 },
+            shadowOpacity: 0.8,
+            shadowRadius: 8,
+            elevation: 8,
+          })
         }}
       >
         {/* top-right anchor inside player row */}
@@ -712,18 +800,18 @@ function Row({
         })}
         {staged.map((c, i) => (
           <View key={"s_"+i} style={{ marginRight: gap }} pointerEvents="box-none">
-            <DraggableCard card={c} small onMove={onMove} onDrop={onDrop} />
+                            <DraggableCard card={c} small onDrop={onDrop} />
           </View>
         ))}
         {Array.from({ length: remaining }).map((_, i) => (
-          <View
+          <Animated.View
             key={"p_"+i}
             style={{
               width: SLOT_W,
               height: SLOT_H,
               marginRight: gap,
               borderWidth: 2,
-              borderColor: highlightRow ? colors.accent : colors.outline,
+              borderColor: inFantasyland ? rainbowColor : (highlightRow ? colors.accent : colors.outline),
               borderRadius: 10,
               backgroundColor: "rgba(255,255,255,0.05)",
             }}

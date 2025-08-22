@@ -4,7 +4,8 @@ import { config } from "../config/env.js";
 import { Events } from "./events.js";
 import {
   createRoomHandler, joinRoomHandler, leaveRoomHandler,
-  startRoundHandler, placeHandler, discardHandler, readyHandler
+  startRoundHandler, placeHandler, discardHandler, readyHandler,
+  getRoomById
 } from "../game/rooms.js";
 
 export function attachIO(httpServer) {
@@ -34,6 +35,30 @@ export function attachIO(httpServer) {
     socket.on(Events.PLACE, (p) => placeHandler(io, socket, p));
     socket.on(Events.DISCARD, (p) => discardHandler(io, socket, p));
     socket.on(Events.READY, (p) => readyHandler(io, socket, p));
+    
+    // Timer sync handler
+    socket.on(Events.TIMER_SYNC, () => {
+      // Find the room this socket is in
+      const rooms = io.sockets.adapter.rooms;
+      let roomId = null;
+      for (const [room, sockets] of rooms) {
+        if (sockets.has(socket.id)) {
+          roomId = room;
+          break;
+        }
+      }
+      
+      if (roomId && roomId !== socket.id) { // socket.id is not a room
+        const room = getRoomById(roomId);
+        if (room && room.timer.isActive) {
+          socket.emit(Events.TIMER_SYNC, {
+            timeLeft: room.timer.timeLeft,
+            startTime: room.timer.startTime,
+            serverTime: Date.now()
+          });
+        }
+      }
+    });
   });
 
   return io;

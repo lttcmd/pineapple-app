@@ -3,7 +3,13 @@ import { create } from "zustand";
 // row caps
 const CAPS = { top: 3, middle: 5, bottom: 5 };
 const committedTotal = (b) => b.top.length + b.middle.length + b.bottom.length;
-const computeTurnCap = (s) => (committedTotal(s.board) === 0 ? 5 : 2);
+const computeTurnCap = (s) => {
+  if (s.inFantasyland) {
+    // In fantasyland, place 13 cards (leaving 1 in hand)
+    return 13;
+  }
+  return (committedTotal(s.board) === 0 ? 5 : 2);
+};
 
 export const useGame = create((set, get) => ({
   userId: null,
@@ -12,6 +18,7 @@ export const useGame = create((set, get) => ({
 
   phase: "idle",
   round: null,
+  currentRound: null, // Track current round within the hand
   players: [],
 
   board: { top: [], middle: [], bottom: [] },  // committed (locked)
@@ -20,10 +27,19 @@ export const useGame = create((set, get) => ({
   staged: { placements: [], discard: null },     // this-turn moves
   discards: [],                                   // all discards this hand (mine)
   reveal: null,                                   // { boards, results } at reveal
+  nextRoundReady: new Set(),                     // Set of userIds ready for next round
+  inFantasyland: false,                          // Whether current player is in fantasyland
 
   placedCountThisTurn: () => get().staged.placements.length,
   turnCap: () => computeTurnCap(get()),
-  canCommit: () => get().staged.placements.length === computeTurnCap(get()),
+  canCommit: () => {
+    const state = get();
+    if (state.inFantasyland) {
+      // In fantasyland, can commit when 13 cards are placed (1 left in hand)
+      return state.staged.placements.length === 13;
+    }
+    return state.staged.placements.length === computeTurnCap(state);
+  },
 
   setName: (name) => set({ name }),
 
@@ -70,15 +86,20 @@ export const useGame = create((set, get) => ({
     }
 
     // auto-discard only after first 5 are committed (i.e., on 3-card turns)
+    // No discards in fantasyland mode
     let discard = s.staged.discard;
     const isThreeCardTurn = committedTotal(s.board) > 0 && s.currentDeal.length === 3;
-    if (isThreeCardTurn) {
+    if (isThreeCardTurn && !s.inFantasyland) {
       if (discardOverride) {
         discard = discardOverride;
       } else {
         const leftover = s.currentDeal.find(c => !stagedCards.includes(c));
         if (leftover) discard = leftover;
       }
+    }
+    // In fantasyland, no discards
+    if (s.inFantasyland) {
+      discard = null;
     }
 
     const committedSet = new Set([...s.board.top, ...s.board.middle, ...s.board.bottom, ...stagedCards]);
@@ -106,6 +127,7 @@ export const useGame = create((set, get) => ({
           ...s,
           phase: "deal5",
           round: data.round,
+          currentRound: 1, // Reset to round 1 for new hand
           players: data.players ?? s.players,
           board: { top: [], middle: [], bottom: [] },
           hand: [],
@@ -113,32 +135,70 @@ export const useGame = create((set, get) => ({
           staged: { placements: [], discard: null },
           discards: [],
           reveal: null,
+          nextRoundReady: new Set(), // Reset next round ready state
+          // Keep fantasyland status from previous reveal (don't reset here)
+          inFantasyland: s.inFantasyland,
         };
 
       case "round:deal": {
-        // Normalize count: first deal 5, otherwise 3
         const incoming = Array.isArray(data?.cards) ? data.cards : [];
         if (incoming.length === 0) return s;
 
-        const haveCommitted = committedTotal(s.board) > 0;
-        const want = haveCommitted ? 3 : 5;
-        const normalized = incoming.slice(0, want);
+        const isFantasyland = data?.fantasyland ?? false;
+        const round = data?.round ?? 1;
+        
+        console.log(`🎭 Mobile deal: ${incoming.length} cards, fantasyland=${isFantasyland}, round=${round}`);
+        
+        if (isFantasyland) {
+          // Fantasyland mode: accept all 14 cards
+          const normalized = incoming.slice(0, 14);
+          
+          // De-dup against anything we already hold
+          const seen = new Set([
+            ...s.board.top, ...s.board.middle, ...s.board.bottom,
+            ...s.hand,
+            ...s.staged.placements.map(p => p.card),
+            ...s.currentDeal,
+          ]);
+          const deduped = normalized.filter(c => !seen.has(c));
 
-        // De-dup against anything we already hold (board + hand + staged + currentDeal)
-        const seen = new Set([
-          ...s.board.top, ...s.board.middle, ...s.board.bottom,
-          ...s.hand,
-          ...s.staged.placements.map(p => p.card),
-          ...s.currentDeal,
-        ]);
-        const deduped = normalized.filter(c => !seen.has(c));
+          return {
+            ...s,
+            currentDeal: deduped,                   // all 14 fantasyland cards
+            hand: [...s.hand, ...deduped],          // append all new cards
+            phase: data.phase ?? s.phase,
+            currentRound: round,                    // track current round
+            // Keep existing fantasyland status (don't override here)
+            inFantasyland: s.inFantasyland,
+          };
+        } else {
+          // Normal mode: handle based on round number
+          let want = 3; // default for rounds 2-5
+          if (round === 1) {
+            want = 5; // round 1 gets 5 cards
+          }
+          
+          const normalized = incoming.slice(0, want);
 
-        return {
-          ...s,
-          currentDeal: deduped,                   // strictly 5 or 3, without duplicates
-          hand: [...s.hand, ...deduped],          // append only new cards
-          phase: data.phase ?? s.phase,
-        };
+          // De-dup against anything we already hold
+          const seen = new Set([
+            ...s.board.top, ...s.board.middle, ...s.board.bottom,
+            ...s.hand,
+            ...s.staged.placements.map(p => p.card),
+            ...s.currentDeal,
+          ]);
+          const deduped = normalized.filter(c => !seen.has(c));
+
+          return {
+            ...s,
+            currentDeal: deduped,                   // strictly 5 or 3, without duplicates
+            hand: [...s.hand, ...deduped],          // append only new cards
+            phase: data.phase ?? s.phase,
+            currentRound: round,                    // track current round
+            // Keep existing fantasyland status (don't override here)
+            inFantasyland: s.inFantasyland,
+          };
+        }
       }
 
       case "action:applied": {
@@ -162,6 +222,8 @@ export const useGame = create((set, get) => ({
             discards: serverDiscards,
             staged: { placements: [], discard: null },
             currentDeal: [],
+            // Preserve fantasyland status during auto-commit
+            inFantasyland: s.inFantasyland,
           };
         }
         
@@ -181,10 +243,31 @@ export const useGame = create((set, get) => ({
       }
 
       case "round:reveal":
+        // Check if this player qualifies for fantasyland next hand
+        const meId = s.userId;
+        const fantasylandData = data?.fantasyland || [];
+        const myFantasylandData = fantasylandData.find(f => f.userId === meId);
+        const willBeInFantasyland = myFantasylandData?.qualified || false;
+        
+        console.log('🎯 round:reveal - meId:', meId, 'fantasylandData:', fantasylandData, 'myFantasylandData:', myFantasylandData, 'willBeInFantasyland:', willBeInFantasyland);
+        
         return {
           ...s,
           staged: { placements: [], discard: data?.discard ?? s.staged.discard },
-          reveal: { boards: data?.boards || [], results: data?.results || {} },
+          reveal: { 
+            boards: data?.boards || [], 
+            results: data?.results || {},
+            fantasyland: data?.fantasyland || []
+          },
+          nextRoundReady: new Set(), // Reset next round ready state
+          // Set fantasyland status for next hand
+          inFantasyland: willBeInFantasyland,
+        };
+
+      case "round:next-ready":
+        return {
+          ...s,
+          nextRoundReady: new Set(data?.readyPlayers || []),
         };
 
       case "room:state":

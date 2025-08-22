@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, Button, Alert } from "react-native";
+import { View, Text, TextInput, Pressable, Alert, SafeAreaView } from "react-native";
 import axios from "axios";
 import * as SecureStore from "expo-secure-store";
 import { SERVER_URL } from "../config/env";
+import { colors } from "../theme/colors";
 
 export default function AuthPhone({ navigation }) {
   const [phone, setPhone] = useState("");
@@ -36,21 +37,80 @@ export default function AuthPhone({ navigation }) {
   }
 
   return (
-    <View style={{ padding:16, gap:12 }}>
-      <Text style={{ fontSize:18, fontWeight:"600" }}>Enter phone number</Text>
-      <TextInput
-        value={phone}
-        onChangeText={setPhone}
-        placeholder="+61 4xx xxx xxx"
-        autoCapitalize="none"
-        keyboardType="phone-pad"
-        style={{ borderWidth:1, borderRadius:8, padding:12 }}
-      />
-      <Button 
-        title={isLoading ? "Sending..." : "Send code"} 
-        onPress={sendCode}
-        disabled={isLoading}
-      />
-    </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
+      <View style={{ 
+        flex: 1, 
+        padding: 24, 
+        justifyContent: 'flex-start',
+        paddingTop: 80,
+        gap: 24 
+      }}>
+        <View style={{ alignItems: 'center', marginBottom: 32 }}>
+          <Text style={{ 
+            fontSize: 28, 
+            fontWeight: "700", 
+            color: colors.text,
+            marginBottom: 8
+          }}>
+            Heads Up Pineapple
+          </Text>
+          <Text style={{ 
+            fontSize: 16, 
+            color: colors.sub,
+            textAlign: 'center'
+          }}>
+            Enter your phone number to get started
+          </Text>
+        </View>
+
+        <View style={{ gap: 16 }}>
+          <Text style={{ 
+            fontSize: 16, 
+            fontWeight: "600",
+            color: colors.text,
+            marginBottom: 8
+          }}>
+            Phone Number
+          </Text>
+          <TextInput
+            value={phone}
+            onChangeText={setPhone}
+            placeholder="+61 4xx xxx xxx"
+            placeholderTextColor={colors.sub}
+            autoCapitalize="none"
+            keyboardType="phone-pad"
+            style={{ 
+              borderWidth: 1, 
+              borderRadius: 12, 
+              padding: 16,
+              fontSize: 16,
+              backgroundColor: colors.panel,
+              borderColor: colors.outline,
+              color: colors.text
+            }}
+          />
+        </View>
+
+        <Pressable
+          onPress={sendCode}
+          disabled={isLoading}
+          style={{
+            backgroundColor: isLoading ? colors.outline : colors.accent,
+            borderRadius: 12,
+            padding: 16,
+            alignItems: 'center',
+            marginTop: 16
+          }}
+        >
+          <Text style={{ 
+            color: isLoading ? colors.sub : colors.text,
+            fontSize: 16,
+            fontWeight: '600'
+          }}>
+            {isLoading ? "Sending..." : "Send Code"}
+          </Text>
+        </Pressable>
+      </View>
+    </SafeAreaView>
   );
 }

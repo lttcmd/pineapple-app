@@ -9,6 +9,7 @@ const RVAL = Object.fromEntries([...RANKS].map((r, i) => [r, i]));
 function countByRank(cards) {
   const m = new Map();
   for (const c of cards) {
+    if (!c || typeof c !== 'string' || c.length < 1) continue;
     const r = c[0];
     m.set(r, (m.get(r) || 0) + 1);
   }
@@ -20,12 +21,15 @@ function countByRank(cards) {
 }
 
 function isFlush(cards) {
-  const s = cards.map(c => c[1]);
+  if (!cards || cards.length === 0) return false;
+  const s = cards.map(c => c && c[1]).filter(x => x !== undefined);
+  if (s.length !== cards.length) return false; // Some cards were invalid
   return s.every(x => x === s[0]);
 }
 
 function isStraight(cards) {
-  const vals = [...new Set(cards.map(c => RVAL[c[0]]))].sort((a, b) => a - b);
+  if (!cards || cards.length !== 5) return { ok: false };
+  const vals = [...new Set(cards.map(c => c && RVAL[c[0]]).filter(x => x !== undefined))].sort((a, b) => a - b);
   if (vals.length !== 5) return { ok: false };
 
   // Normal straight
@@ -55,7 +59,13 @@ export function isRoyalFlush(cards) {
  *  - key: number[] tiebreakers (higher wins lexicographically)
  */
 export function rank5(cards) {
-  if (cards.length !== 5) throw new Error("rank5 expects 5 cards");
+  console.log(`🔍 rank5 called with:`, cards);
+  if (!cards || cards.length !== 5) throw new Error("rank5 expects 5 cards");
+  // Check for invalid cards
+  if (cards.some(c => !c || typeof c !== 'string' || c.length < 2)) {
+    console.log(`🚨 INVALID CARDS in rank5:`, cards);
+    throw new Error("rank5 expects valid card strings");
+  }
 
   const flush = isFlush(cards);
   const st = isStraight(cards);
@@ -113,7 +123,13 @@ export function compare5(a, b) {
 /* ---------- 3-card (top) evaluator ---------- */
 /** trips > pair > high; tiebreakers by ranks descending */
 export function rankTop3(cards) {
-  if (cards.length !== 3) throw new Error("rankTop3 expects 3 cards");
+  console.log(`🔍 rankTop3 called with:`, cards);
+  if (!cards || cards.length !== 3) throw new Error("rankTop3 expects 3 cards");
+  // Check for invalid cards
+  if (cards.some(c => !c || typeof c !== 'string' || c.length < 2)) {
+    console.log(`🚨 INVALID CARDS in rankTop3:`, cards);
+    throw new Error("rankTop3 expects valid card strings");
+  }
   const counts = countByRank(cards);
   const pattern = counts.map(([, c]) => c).join("-");
 

@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, Button, Alert, StyleSheet } from "react-native";
+import { View, Text, TextInput, Pressable, Alert, SafeAreaView } from "react-native";
 import axios from "axios";
 import * as SecureStore from "expo-secure-store";
 import { SERVER_URL } from "../config/env";
+import { colors } from "../theme/colors";
 
 export default function CreateUsername({ navigation }) {
   const [username, setUsername] = useState("");
@@ -42,56 +43,81 @@ export default function CreateUsername({ navigation }) {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Choose your username</Text>
-      <Text style={styles.subtitle}>
-        This will be your display name in the game. You cannot change it later.
-      </Text>
-      
-      <TextInput
-        value={username}
-        onChangeText={setUsername}
-        placeholder="Enter username (3-20 characters)"
-        autoCapitalize="none"
-        autoCorrect={false}
-        style={styles.input}
-        maxLength={20}
-      />
-      
-      <Button 
-        title={isLoading ? "Creating..." : "Create Account"} 
-        onPress={createUsername}
-        disabled={isLoading}
-      />
-    </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
+      <View style={{ 
+        flex: 1, 
+        padding: 24, 
+        justifyContent: 'flex-start',
+        paddingTop: 80,
+        gap: 24 
+      }}>
+        <View style={{ alignItems: 'center', marginBottom: 32 }}>
+          <Text style={{ 
+            fontSize: 28, 
+            fontWeight: "700", 
+            color: colors.text,
+            marginBottom: 8
+          }}>
+            Choose Your Username
+          </Text>
+          <Text style={{ 
+            fontSize: 16, 
+            color: colors.sub,
+            textAlign: 'center'
+          }}>
+            This cannot be changed.
+          </Text>
+        </View>
+
+        <View style={{ gap: 16 }}>
+          <Text style={{ 
+            fontSize: 16, 
+            fontWeight: "600",
+            color: colors.text,
+            marginBottom: 8
+          }}>
+            Username
+          </Text>
+          <TextInput
+            value={username}
+            onChangeText={setUsername}
+            placeholder="Enter username (3-20 characters)"
+            placeholderTextColor={colors.sub}
+            autoCapitalize="none"
+            autoCorrect={false}
+            maxLength={20}
+            style={{ 
+              borderWidth: 1, 
+              borderRadius: 12, 
+              padding: 16,
+              fontSize: 16,
+              backgroundColor: colors.panel,
+              borderColor: colors.outline,
+              color: colors.text
+            }}
+          />
+        </View>
+
+        <Pressable
+          onPress={createUsername}
+          disabled={isLoading}
+          style={{
+            backgroundColor: isLoading ? colors.outline : colors.accent,
+            borderRadius: 12,
+            padding: 16,
+            alignItems: 'center',
+            marginTop: 16
+          }}
+        >
+          <Text style={{ 
+            color: isLoading ? colors.sub : colors.text,
+            fontSize: 16,
+            fontWeight: '600'
+          }}>
+            {isLoading ? "Creating..." : "Create Account"}
+          </Text>
+        </Pressable>
+      </View>
+    </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-    justifyContent: 'center',
-    gap: 16,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    textAlign: 'center',
-    color: '#666',
-    marginBottom: 24,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    marginBottom: 16,
-  },
-});

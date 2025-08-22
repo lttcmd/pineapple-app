@@ -37,10 +37,16 @@ app.get("/monitor", (_req, res) => {
       phase: room.phase,
       round: room.round,
       roundIndex: room.roundIndex,
-      timer: {
+      timer: room.timer ? {
         isActive: room.timer.isActive,
         timeLeft: room.timer.timeLeft
+      } : {
+        isActive: false,
+        timeLeft: 0
       },
+      seed: room.seed,
+      sharedDeck: room.sharedDeck,
+      handCards: room.handCards,
       players: {}
     };
     
@@ -49,6 +55,9 @@ app.get("/monitor", (_req, res) => {
         name: player.name,
         score: player.score || 0,
         ready: player.ready,
+        inFantasyland: player.inFantasyland,
+        hasPlayedFantasylandHand: player.hasPlayedFantasylandHand,
+        handCardIndex: player.handCardIndex,
         hand: player.hand,
         board: player.board,
         discards: player.discards,

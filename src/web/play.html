@@ -44,37 +44,7 @@
     .card.clubs    { color: #66d06f; }
     .card.spades   { color: #e7e8ea; }
 
-    /* Timer styles */
-    .timer-container {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: 4px;
-      background-color: var(--bg);
-      overflow: hidden;
-      z-index: 1000;
-    }
-    .timer-bar {
-      height: 100%;
-      background-color: #FFD700;
-      transition: width 0.05s linear;
-    }
-    .opponent-timer {
-      margin-top: 8px;
-      height: 4px;
-      background-color: var(--bg);
-      border-radius: 2px;
-      overflow: hidden;
-      width: 215px; /* Width of 5 tiny cards (40px each) with 3px gaps */
-      margin-left: auto;
-      margin-right: auto;
-    }
-    .opponent-timer-bar {
-      height: 100%;
-      background-color: #FFD700;
-      transition: width 0.05s linear;
-    }
+
 
     /* Right column */
     #log { white-space:pre-wrap; background:#0b0e17; border:1px solid #2a3244; border-radius:10px; padding:10px; min-height:120px; color:#b9f6ca; }
@@ -91,6 +61,7 @@
     <span id="conn" class="pill">connecting…</span>
     <span>Room:</span> <span id="roomPill" class="pill">—</span>
     <span>Phase:</span> <span id="phase" class="pill">—</span>
+    <span>Round:</span> <span id="currentRound" class="pill">—</span>
     <button id="start">Start Round</button>
     <button id="ready" disabled>Send Batch + Ready</button>
   </div>
@@ -127,20 +98,14 @@
           <div class="rowline staged" id="discardStaged"></div>
         </div>
         
-        <!-- Opponent timer -->
-        <div id="opponentTimer" class="opponent-timer" style="display: none;">
-          <div id="opponentTimerBar" class="opponent-timer-bar" style="width: 100%;"></div>
-        </div>
+
       </div>
 
       <h4 style="margin:12px 0 6px;">Your Hand</h4>
       <div id="hand" class="hand"></div>
     </div>
 
-    <!-- Timer elements -->
-    <div id="timerContainer" class="timer-container" style="display: none;">
-      <div id="timerBar" class="timer-bar" style="width: 100%;"></div>
-    </div>
+
 
     <div>
       <fieldset style="border:1px solid #2a3244; border-radius:10px; padding:10px;">
@@ -181,57 +146,9 @@
     const totals = new Map();
     const nextRoundReady = new Set(); // Set of userIds ready for next round
     
-    // Timer state - now controlled by server
-    let serverTimeLeft = 15000; // 15 seconds in milliseconds
-    let isTimerActive = false;
-
     // --- rendering helpers
     function suitClass(s){ return s==='h'?'hearts':s==='d'?'diamonds':s==='c'?'clubs':'spades'; }
     function suitSymbol(s){ return s==='h'?'♥':s==='d'?'♦':s==='c'?'♣':'♠'; }
-
-    // Server timer event handlers
-    function handleTimerStart(data) {
-      console.log("Server timer started:", data);
-      serverTimeLeft = data.timeLeft;
-      isTimerActive = data.isActive;
-      
-      // Show timer elements
-      $('timerContainer').style.display = 'block';
-      $('opponentTimer').style.display = 'block';
-      
-      // Update timer bar
-      const progress = (serverTimeLeft / 15000) * 100;
-      $('timerBar').style.width = progress + '%';
-      $('opponentTimerBar').style.width = progress + '%';
-    }
-    
-    function handleTimerUpdate(data) {
-      serverTimeLeft = data.timeLeft;
-      isTimerActive = data.isActive;
-      
-      // Update timer bar
-      const progress = (serverTimeLeft / 15000) * 100;
-      $('timerBar').style.width = progress + '%';
-      $('opponentTimerBar').style.width = progress + '%';
-      
-      // Debug logging every 2 seconds
-      if (serverTimeLeft % 2000 < 100) {
-        console.log("Server timer update:", {
-          serverTimeLeft,
-          isTimerActive,
-          progress
-        });
-      }
-    }
-    
-    function handleTimerStop() {
-      console.log("Server timer stopped");
-      isTimerActive = false;
-      
-      // Hide timer elements
-      $('timerContainer').style.display = 'none';
-      $('opponentTimer').style.display = 'none';
-    }
     
 
 
@@ -280,7 +197,7 @@
 
         const isDiscard = zone.dataset.discard === 'true';
         if (currentPhase === 'round' && !lastBatch.includes(code)) {
-          alert('This step: only the 3 new cards can be used.'); return;
+          alert('This step: only the new cards can be used.'); return;
         }
 
         if (isDiscard) {
@@ -312,38 +229,71 @@
         return myHand.length === 0 || (myBoard.top.length + myBoard.middle.length + myBoard.bottom.length) >= 5;
       }
       if (currentPhase === 'round') {
-        const placedFromBatch = staged.placements.filter(p => lastBatch.includes(p.card)).length;
-        return placedFromBatch === 2; // discard auto if missing
+        // Check if this is fantasyland mode (14 cards in lastBatch)
+        if (lastBatch.length === 14) {
+          // Fantasyland mode: must place all 14 cards, no discards
+          return myHand.length === 0;
+        }
+        
+        // Check if this is round 1 (5 cards) or other rounds (3 cards)
+        if (lastBatch.length === 5) {
+          // Round 1: must place all 5 cards, no discard
+          return myHand.length === 0;
+        } else if (lastBatch.length === 3) {
+          // Rounds 2-5: must place exactly 2 of the 3 cards
+          const placedFromBatch = staged.placements.filter(p => lastBatch.includes(p.card)).length;
+          return placedFromBatch === 2; // discard auto if missing
+        }
+      }
+      return false;
+    }
+    
+    // fantasyland validity - must place all 14 cards
+    function canSetFantasyland(){
+      if (currentPhase === 'round') {
+        // In fantasyland, must place all 14 cards (no discards)
+        return myHand.length === 0;
       }
       return false;
     }
 
     // buttons
     $('start').onclick = () => {
-      if (currentPhase !== 'reveal') {
-        alert('Can only start next round after reveal');
-        return;
-      }
       socket.emit("round:start", { roomId });
     };
  $('ready').onclick = () => {
   if (!socket) return alert('Connect first');
 
   if (currentPhase === 'round') {
-    // must place exactly 2 of the 3 new cards; leftover auto-discarded
-    const placedFromBatch = staged.placements
-      .filter(p => lastBatch.includes(p.card))
-      .map(p => p.card);
-
-    if (!staged.discard) {
-      const leftover = lastBatch.filter(c => !placedFromBatch.includes(c));
-      if (leftover.length !== 1) {
-        return alert('Place exactly 2 of the 3 new cards.');
+    // Check if this is fantasyland mode (14 cards in lastBatch)
+    if (lastBatch.length === 14) {
+      // Fantasyland mode: must place all 14 cards, no discards
+      if (myHand.length > 0) {
+        return alert('In Fantasy Land, you must place all 14 cards.');
       }
-      const toDiscard = leftover[0];
-      const idx = myHand.indexOf(toDiscard);
-      if (idx !== -1) myHand.splice(idx, 1);
-      staged.discard = toDiscard;
+      staged.discard = null; // No discard in fantasyland
+    } else if (lastBatch.length === 5) {
+      // Round 1: must place all 5 cards, no discard
+      if (myHand.length > 0) {
+        return alert('In Round 1, you must place all 5 cards.');
+      }
+      staged.discard = null; // No discard in round 1
+    } else if (lastBatch.length === 3) {
+      // Rounds 2-5: must place exactly 2 of the 3 new cards; leftover auto-discarded
+      const placedFromBatch = staged.placements
+        .filter(p => lastBatch.includes(p.card))
+        .map(p => p.card);
+
+      if (!staged.discard) {
+        const leftover = lastBatch.filter(c => !placedFromBatch.includes(c));
+        if (leftover.length !== 1) {
+          return alert('Place exactly 2 of the 3 new cards.');
+        }
+        const toDiscard = leftover[0];
+        const idx = myHand.indexOf(toDiscard);
+        if (idx !== -1) myHand.splice(idx, 1);
+        staged.discard = toDiscard;
+      }
     }
   }
 
@@ -359,7 +309,7 @@
   for (const p of staged.placements) myBoard[p.row].push(p.card);
   if (staged.discard) myDiscards.push(staged.discard);
 
-  // IMPORTANT: clear the current 3-card batch only AFTER committing
+  // IMPORTANT: clear the current batch only AFTER committing
   lastBatch = [];
 
   // reset staging and refresh UI
@@ -427,6 +377,7 @@
 
     // socket
     function setPhase(p){ currentPhase=p||'—'; $('phase').textContent=currentPhase; $('ready').disabled=!canSet(); }
+    function setCurrentRound(r){ $('currentRound').textContent=r||'—'; }
     function log(m){ $('log').textContent += m + "\n"; }
 
     socket = io("/", { auth:{ token } });
@@ -444,6 +395,7 @@
 
     socket.on("room:state", (s)=>{ 
       setPhase(s.phase); 
+      setCurrentRound(s.currentRound);
       log("STATE\n"+JSON.stringify(s,null,2)); 
       updateStartButton();
     });
@@ -455,8 +407,40 @@
       nextRoundReady.clear();
       updateStartButton();
     });
-    socket.on("round:deal", ({cards})=>{
-      lastBatch = cards.slice(); myHand = myHand.concat(cards); renderHand(); $('ready').disabled=!canSet(); log("DEAL "+JSON.stringify(cards));
+    socket.on("round:deal", ({cards, fantasyland, round})=>{
+      lastBatch = cards.slice(); 
+      myHand = myHand.concat(cards); 
+      renderHand(); 
+      
+      if (fantasyland) {
+        // Fantasyland mode: 14 cards, no discard button, 2 rows of 7 cards
+        log("FANTASY LAND MODE: 14 cards dealt");
+        $('ready').disabled = !canSetFantasyland();
+        
+        // Hide discard zone for fantasyland
+        $('zoneDiscard').style.display = 'none';
+        
+        // Update UI to show fantasyland mode
+        document.body.style.backgroundColor = '#fff3cd';
+        setTimeout(() => {
+          document.body.style.backgroundColor = '';
+        }, 1000);
+      } else {
+        // Normal mode: check if this is round 1 (5 cards) or other rounds (3 cards)
+        if (round === 1) {
+          // Round 1: 5 cards, must place all 5
+          log("ROUND 1: 5 cards dealt, must place all");
+          $('ready').disabled = !canSet();
+          $('zoneDiscard').style.display = 'none'; // No discard in round 1
+        } else {
+          // Rounds 2-5: 3 cards, place 2 discard 1
+          log(`ROUND ${round}: 3 cards dealt, place 2 discard 1`);
+          $('ready').disabled = !canSet();
+          $('zoneDiscard').style.display = 'block';
+        }
+      }
+      
+      log("DEAL "+JSON.stringify(cards) + (fantasyland ? " (FANTASY LAND)" : ` (ROUND ${round})`));
     });
     socket.on("round:reveal", (payload)=>{
       log("REVEAL\n"+JSON.stringify(payload,null,2));
@@ -550,10 +534,7 @@
       }
     });
 
-    // Timer events
-    socket.on("timer:start", handleTimerStart);
-    socket.on("timer:update", handleTimerUpdate);
-    socket.on("timer:stop", handleTimerStop);
+
     socket.on("error:msg", (e)=> log("ERROR "+e.message));
   </script>
 </body>

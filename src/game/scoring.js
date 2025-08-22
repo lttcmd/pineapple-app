@@ -12,6 +12,7 @@ const RVAL = Object.fromEntries([...RANKS].map((r, i) => [r, i]));
 function rankCounts(cards) {
   const m = new Map();
   for (const c of cards) {
+    if (!c || typeof c !== 'string' || c.length < 1) continue;
     const r = c[0];
     m.set(r, (m.get(r) || 0) + 1);
   }
@@ -56,23 +57,98 @@ function bestTopFromFive(cards) {
 /* ---------- validation (fouls) ---------- */
 
 export function validateBoard(board) {
+  console.log(`🔍 validateBoard called with:`, board);
+  if (!board || !board.top || !board.middle || !board.bottom) {
+    console.log(`🚨 Invalid board structure:`, board);
+    return { fouled: true, reason: "invalid board structure" };
+  }
   const { top, middle, bottom } = board;
-  if (top.length !== 3 || middle.length !== 5 || bottom.length !== 5) {
+  if (!Array.isArray(top) || !Array.isArray(middle) || !Array.isArray(bottom) ||
+      top.length !== 3 || middle.length !== 5 || bottom.length !== 5) {
+    console.log(`🚨 Wrong counts: top=${top?.length}, middle=${middle?.length}, bottom=${bottom?.length}`);
     return { fouled: true, reason: "wrong counts" };
+  }
+  
+  // Check for invalid cards
+  if (top.some(c => !c || typeof c !== 'string' || c.length < 2) ||
+      middle.some(c => !c || typeof c !== 'string' || c.length < 2) ||
+      bottom.some(c => !c || typeof c !== 'string' || c.length < 2)) {
+    console.log(`🚨 INVALID CARDS DETECTED in validateBoard:`);
+    console.log(`  Top:`, top);
+    console.log(`  Middle:`, middle);
+    console.log(`  Bottom:`, bottom);
+    return { fouled: true, reason: "invalid cards" };
   }
 
   const m5 = rank5(middle);
   const b5 = rank5(bottom);
 
-  // bottom must be >= middle
+  // bottom must be >= middle (both 5-card hands)
   if (compare5(b5, m5) < 0) return { fouled: true, reason: "bottom < middle" };
 
-  // top must be <= best-top-from-middle (prevents top outclassing middle)
+  // middle must be >= top (5-card vs 3-card comparison)
+  // Since top can only be high card, pair, or trips, we need to compare appropriately
   const t3 = rankTop3(top);
-  const midBestTop = bestTopFromFive(middle);
-  if (compareTop3(t3, midBestTop) > 0) {
-    return { fouled: true, reason: "top > middle" };
+  
+  // If middle is a strong 5-card hand (full house or better), it's definitely stronger than any 3-card hand
+  if (m5.cat >= 6) return { fouled: false };
+  
+  // If middle is a straight or flush, it's stronger than any 3-card hand
+  if (m5.cat >= 4) return { fouled: false };
+  
+  // If middle is trips, compare with top
+  if (m5.cat === 3) {
+    // Middle has trips, top can be high card, pair, or trips
+    if (t3.cat === 2) { // Top has trips
+      // Compare the trip ranks
+      if (t3.key[0] > m5.key[0]) {
+        return { fouled: true, reason: "top trips > middle trips" };
+      }
+    }
+    // If top has pair or high card, middle trips wins
+    return { fouled: false };
   }
+  
+  // If middle is two pair, compare with top
+  if (m5.cat === 2) {
+    if (t3.cat === 2) { // Top has trips
+      return { fouled: true, reason: "top trips > middle two pair" };
+    }
+    if (t3.cat === 1) { // Top has pair
+      // Compare pair ranks - middle two pair should be stronger than top pair
+      // But we need to be careful about the comparison
+      // For now, allow pairs in top with two pair in middle
+      return { fouled: false };
+    }
+    return { fouled: false };
+  }
+  
+  // If middle is one pair, compare with top
+  if (m5.cat === 1) {
+    if (t3.cat === 2) { // Top has trips
+      return { fouled: true, reason: "top trips > middle pair" };
+    }
+    if (t3.cat === 1) { // Top has pair
+      // Compare pair ranks
+      if (t3.key[0] > m5.key[0]) {
+        return { fouled: true, reason: "top pair > middle pair" };
+      }
+    }
+    return { fouled: false };
+  }
+  
+  // If middle is high card, compare with top
+  if (m5.cat === 0) {
+    if (t3.cat >= 1) { // Top has pair or trips
+      return { fouled: true, reason: "top pair/trips > middle high card" };
+    }
+    // Both high card - compare highest cards
+    if (t3.key[0] > m5.key[0]) {
+      return { fouled: true, reason: "top high card > middle high card" };
+    }
+  }
+
+  return { fouled: false };
 
   return { fouled: false };
 }
@@ -268,4 +344,46 @@ export function settlePairwiseDetailed(aBoard, bBoard) {
   detail.b.total = sumLinesB + detail.b.scoop + (detail.b.royalties - detail.a.royalties);
 
   return detail;
+}
+
+/* ---------- fantasyland detection ---------- */
+
+export function checkFantasylandEligibility(board, validateFouls = true) {
+  if (!board || !board.top) return false;
+  const { top } = board;
+  if (!Array.isArray(top) || top.length !== 3) return false;
+  
+  // Check for invalid cards
+  if (top.some(c => !c || typeof c !== 'string' || c.length < 2)) return false;
+  
+  // Check for QQ, KK, or AA in top
+  const counts = rankCounts(top);
+  const hasQQ = (counts.get('Q') || 0) >= 2;
+  const hasKK = (counts.get('K') || 0) >= 2;
+  const hasAA = (counts.get('A') || 0) >= 2;
+  
+  if (!hasQQ && !hasKK && !hasAA) return false;
+  
+  // Only validate fouls if requested (not during middle of game)
+  if (validateFouls) {
+    const validation = validateBoard(board);
+    return !validation.fouled;
+  }
+  
+  return true;
+}
+
+export function checkFantasylandContinuation(board) {
+  const { top, bottom } = board;
+  
+  // Top: must have trips (3 of a kind)
+  const topCounts = rankCounts(top);
+  const hasTopTrips = [...topCounts.values()].some(count => count >= 3);
+  
+  // Bottom: must have quads or straight flush or royal flush
+  const bottomRank = rank5(bottom);
+  const hasBottomQuadsOrBetter = bottomRank.cat >= 7; // quads = 7, straight flush = 8, royal flush = 9
+  
+  // Stay in Fantasy Land if you have trips on top OR quads+ on bottom
+  return hasTopTrips || hasBottomQuadsOrBetter;
 }

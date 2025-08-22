@@ -1,13 +1,13 @@
 import { nanoid } from "nanoid";
 
-// Generate random letters only
-function generateLetters(length) {
-  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+// Generate random digits only
+function generateDigits(length) {
+  const digits = '0123456789';
   let result = '';
   for (let i = 0; i < length; i++) {
-    result += letters.charAt(Math.floor(Math.random() * letters.length));
+    result += digits.charAt(Math.floor(Math.random() * digits.length));
   }
   return result;
 }
 
-export const id = (len = 8) => generateLetters(len);
+export const id = (len = 8) => generateDigits(len);

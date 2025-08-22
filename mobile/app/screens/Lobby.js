@@ -124,14 +124,25 @@ export default function Lobby({ navigation }) {
       </Panel>
 
       <Panel style={{ gap:10 }}>
-        <Text style={{ color: colors.sub }}>Room Code</Text>
+        <Text style={{ color: colors.sub }}>4-Digit Room Code</Text>
         <TextInput
           value={room}
           onChangeText={setRoom}
-          placeholder="e.g. ABC123"
-          placeholderTextColor="#9aa4bf"
-          autoCapitalize="characters"
-          style={{ borderWidth:1, borderColor: colors.outline, borderRadius:10, padding:12, color: colors.text, backgroundColor: colors.panel2 }}
+          placeholder="e.g. 1234"
+          placeholderTextColor={colors.sub}
+          keyboardType="number-pad"
+          maxLength={4}
+          style={{ 
+            borderWidth: 1, 
+            borderColor: colors.outline, 
+            borderRadius: 10, 
+            padding: 12, 
+            color: colors.text, 
+            backgroundColor: colors.panel2,
+            fontSize: 16,
+            textAlign: 'center',
+            fontWeight: '600'
+          }}
         />
         <Button
           title="Join Room"

@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text, Button, FlatList } from "react-native";
 import { onSocketEvent, emit } from "../net/socket";
 import { useGame } from "../state/useGame";
@@ -8,16 +8,27 @@ import { colors } from "../theme/colors";
 
 export default function Room({ route, navigation }) {
   const { roomId } = route.params || {};
-  const { players } = useGame();
+  const { players, nextRoundReady } = useGame();
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     const off = onSocketEvent((evt, data) => {
       if (evt === "room:state" && data?.phase && data.phase !== "lobby") {
         navigation.replace("Play", { roomId: data.roomId });
       }
+      if (evt === "round:next-ready") {
+        // Update local ready state
+        const myUserId = useGame.getState().userId;
+        setIsReady(data?.readyPlayers?.includes(myUserId) || false);
+      }
     });
     return () => off();
   }, [navigation]);
+
+  const handleReadyPress = () => {
+    emit("round:start", { roomId });
+    setIsReady(true);
+  };
 
   return (
     <View style={{ flex:1, backgroundColor: colors.bg, padding:16, gap:12 }}>
@@ -32,15 +43,19 @@ export default function Room({ route, navigation }) {
           renderItem={({ item }) => (
             <View style={{ flexDirection:"row", justifyContent:"space-between", paddingVertical:6 }}>
               <Text style={{ color: colors.text }}>{item.name}</Text>
-              <Text style={{ color: item.ready ? colors.ok : colors.sub }}>
-                {item.ready ? "ready" : "waiting"}
+              <Text style={{ color: nextRoundReady.has(item.userId) ? colors.ok : colors.sub }}>
+                {nextRoundReady.has(item.userId) ? "ready" : "waiting"}
               </Text>
             </View>
           )}
         />
       </Panel>
 
-      <Button title="Start Round" onPress={() => emit("round:start", { roomId })} />
+      <Button 
+        title={isReady ? "Waiting for opponent..." : "Ready"} 
+        onPress={handleReadyPress}
+        disabled={isReady}
+      />
     </View>
   );
 }

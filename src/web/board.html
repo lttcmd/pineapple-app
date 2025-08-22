@@ -97,7 +97,7 @@
     <legend>2) Room</legend>
     <div class="row">
       <button id="create">Create Room</button>
-      <label>ROOMID</label><input id="room" type="text" class="mono" placeholder="ABC123" />
+              <label>ROOMID</label><input id="room" type="text" class="mono" placeholder="1234" maxlength="4" />
       <label style="min-width:60px;">Name</label><input id="name" type="text" placeholder="Player" style="width:200px;" />
       <button id="join">Join Room</button>
       <button id="start">Start Round</button>
@@ -432,7 +432,19 @@
       // Show all boards (mine first)
       const mineFirst = [...payload.boards].sort((a,b) => (a.userId===meId? -1 : b.userId===meId? 1 : 0));
       mineFirst.forEach(b => {
-        panel.appendChild(boardBlock(`${b.name}`, b.board, b.valid, b.reason));
+        // Check for fantasyland status
+        const fantasylandInfo = payload.fantasyland?.find(f => f.userId === b.userId);
+        let nameWithBadge = b.name;
+        
+        if (fantasylandInfo) {
+          if (fantasylandInfo.inFantasyland) {
+            nameWithBadge += ' <span style="background: #ff6b35; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; margin-left: 8px;">FANTASY LAND</span>';
+          } else if (fantasylandInfo.qualified) {
+            nameWithBadge += ' <span style="background: #4CAF50; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; margin-left: 8px;">FANTASY LAND QUALIFIED!</span>';
+          }
+        }
+        
+        panel.appendChild(boardBlock(nameWithBadge, b.board, b.valid, b.reason));
       });
 
       // My pairwise breakdowns
