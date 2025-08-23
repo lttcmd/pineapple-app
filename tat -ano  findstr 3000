@@ -1,0 +1,5 @@
+[33m1a91b42[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m Complete UI overhaul: 4-digit room codes, beautiful auth screens, mixed mode fixes, Fantasy Land improvements
+[33m269471b[m Fix room screen: show Ready button and require both players to start first round
+[33m7eaf465[m Require both players to press next round button
+[33m4460b3a[m Fix next round button and timer flash issues
+[33m8eb3246[m Update game logic and UI components
