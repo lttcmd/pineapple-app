@@ -105,6 +105,10 @@ function checkForMatches(io) {
       roundComplete: false,
     });
     
+    // Add both players to nextRoundReady set for auto-start
+    room.nextRoundReady.add(player1Id);
+    room.nextRoundReady.add(player2Id);
+    
     // Emit room state to both players
     io.to(roomId).emit(Events.ROOM_STATE, {
       roomId,
