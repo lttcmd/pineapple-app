@@ -32,6 +32,14 @@
       <button id="create">Create Room</button>
     </div>
 
+    <div class="row">
+      <button id="ranked">Play Ranked</button>
+    </div>
+    
+    <div class="row" id="searching-row" style="display: none;">
+      <button id="cancel-search" class="signout">Cancel Search</button>
+    </div>
+
     <label>Join a room</label>
     <div class="row">
       <input id="room" type="text" placeholder="4-digit room code (e.g. 1234)" style="flex:2" maxlength="4" />
@@ -93,6 +101,40 @@
         showOk(`Created ${roomId}. Joining…`);
         setTimeout(()=> { window.location.href = `/play.html?room=${encodeURIComponent(roomId)}&name=${encodeURIComponent(username)}`; }, 200);
       });
+    };
+
+    // Ranked matchmaking
+    $('ranked').onclick = () => {
+      const username = $('username').textContent;
+      socket.emit("ranked:search", { name: username });
+      showOk("Searching for opponent...");
+      
+      // Show cancel button
+      $('searching-row').style.display = 'flex';
+      $('ranked').disabled = true;
+      
+      // Listen for match found
+      socket.once("ranked:match-found", ({roomId, opponent}) => {
+        showOk(`Match found! Opponent: ${opponent}. Joining...`);
+        setTimeout(()=> { window.location.href = `/play.html?room=${encodeURIComponent(roomId)}&name=${encodeURIComponent(username)}`; }, 200);
+      });
+      
+      // Listen for searching status
+      socket.on("ranked:searching", ({searching}) => {
+        if (!searching) {
+          showOk("Search cancelled");
+          $('searching-row').style.display = 'none';
+          $('ranked').disabled = false;
+        }
+      });
+    };
+
+    // Cancel search
+    $('cancel-search').onclick = () => {
+      socket.emit("ranked:cancel");
+      showOk("Search cancelled");
+      $('searching-row').style.display = 'none';
+      $('ranked').disabled = false;
     };
 
     // Join existing

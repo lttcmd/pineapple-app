@@ -7,6 +7,9 @@ import {
   startRoundHandler, placeHandler, discardHandler, readyHandler,
   getRoomById
 } from "../game/rooms.js";
+import {
+  searchRankedHandler, cancelSearchHandler, cleanupDisconnectedPlayer
+} from "../game/matchmaking.js";
 
 export function attachIO(httpServer) {
   const io = new Server(httpServer, { cors: { origin: "*" } });
@@ -35,6 +38,15 @@ export function attachIO(httpServer) {
     socket.on(Events.PLACE, (p) => placeHandler(io, socket, p));
     socket.on(Events.DISCARD, (p) => discardHandler(io, socket, p));
     socket.on(Events.READY, (p) => readyHandler(io, socket, p));
+    
+    // Ranked matchmaking handlers
+    socket.on(Events.SEARCH_RANKED, (p) => searchRankedHandler(io, socket, p));
+    socket.on(Events.CANCEL_SEARCH, () => cancelSearchHandler(io, socket));
+    
+    // Clean up on disconnect
+    socket.on('disconnect', () => {
+      cleanupDisconnectedPlayer(socket.user.sub);
+    });
     
     // Timer sync handler
     socket.on(Events.TIMER_SYNC, () => {

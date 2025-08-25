@@ -13,8 +13,13 @@ export const Events = {
   ACTION_APPLIED: "action:applied",
   REVEAL: "round:reveal",
   NEXT_ROUND_READY_UPDATE: "round:next-ready",
+  TIMER_SYNC: "timer:sync",
 
-
+  // Ranked matchmaking events
+  SEARCH_RANKED: "ranked:search",
+  CANCEL_SEARCH: "ranked:cancel",
+  MATCH_FOUND: "ranked:match-found",
+  SEARCHING_STATUS: "ranked:searching",
 
   ERROR: "error:msg",
   CHAT: "chat:msg"

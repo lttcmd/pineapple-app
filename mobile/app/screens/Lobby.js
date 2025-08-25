@@ -124,6 +124,16 @@ export default function Lobby({ navigation }) {
       </Panel>
 
       <Panel style={{ gap:10 }}>
+        <Button 
+          title="Play Ranked" 
+          onPress={() => {
+            emit("ranked:search", { name: username || "Player" });
+            navigation.navigate("Searching");
+          }} 
+        />
+      </Panel>
+
+      <Panel style={{ gap:10 }}>
         <Text style={{ color: colors.sub }}>4-Digit Room Code</Text>
         <TextInput
           value={room}

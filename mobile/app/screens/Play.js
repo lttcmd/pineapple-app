@@ -23,17 +23,16 @@ const getResponsiveDimensions = () => {
   const isMediumDevice = screenWidth >= 375 && screenWidth < 414; // iPhone 12, 13, 14
   const isLargeDevice = screenWidth >= 414; // iPhone 12/13/14 Pro Max, large Android
   
-  // Base card dimensions that scale with screen size
-  const baseCardWidth = screenWidth * 0.12; // 12% of screen width
-  const baseCardHeight = baseCardWidth * 1.5; // Maintain aspect ratio
-  
-  // Responsive slot dimensions
-  const SLOT_W = Math.max(45, Math.min(70, baseCardWidth)); // Min 45px, Max 70px
-  const SLOT_H = Math.max(67, Math.min(105, baseCardHeight)); // Min 67px, Max 105px
+  // Match the actual card sizes from Card.js component, but make them 2.5% smaller
+  // small cards: 62x92, tiny cards: 40x56
+  const baseSlotW = isSmallDevice ? 40 : 62;
+  const baseSlotH = isSmallDevice ? 56 : 92;
+  const SLOT_W = Math.floor(baseSlotW * 0.975); // 2.5% smaller
+  const SLOT_H = Math.floor(baseSlotH * 0.975); // 2.5% smaller
   
   // Responsive gaps
-  const SLOT_GAP = isSmallDevice ? 2 : isMediumDevice ? 3 : 4;
-  const ROW_GAP = isSmallDevice ? 4 : isMediumDevice ? 6 : 8;
+  const SLOT_GAP = isSmallDevice ? 1 : isMediumDevice ? 1 : 2; // Reduced gaps
+  const ROW_GAP = isSmallDevice ? 1 : isMediumDevice ? 1 : 2; // Even tighter: 1/1/2 pixels
   
   // Responsive board and control heights
   const BOARD_HEIGHT = SLOT_H * 3 + ROW_GAP * 2;
@@ -116,9 +115,9 @@ function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onM
   const tiny = true;
   const rainbowColor = useRainbowGlow();
   
-  // Responsive opponent card dimensions (smaller than player cards)
-  const oppCardWidth = responsive.SLOT_W * 0.7; // 70% of player card width
-  const oppCardHeight = responsive.SLOT_H * 0.7; // 70% of player card height
+  // Responsive opponent card dimensions (much smaller than player cards)
+  const oppCardWidth = responsive.SLOT_W * 0.5; // 50% of player card width
+  const oppCardHeight = responsive.SLOT_H * 0.5; // 50% of player card height
   
   const capRow = (ref, onLayout, anchorRef, cards, cap, rowOffset = 0) => (
     <View ref={ref} onLayout={onLayout} style={{ 
@@ -195,7 +194,7 @@ function ScoreBubbles({ show, playerAnchors, oppAnchors, detail }) {
   const av = mkVals(a), bv = mkVals(b);
 
   return (
-    <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}>
+    <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, zIndex: 999 }}>
       {bubbleAtPoint(playerAnchors.top, av.top, 'pt')}
       {bubbleAtPoint(playerAnchors.middle, av.middle, 'pm')}
       {bubbleAtPoint(playerAnchors.bottom, av.bottom, 'pb')}
@@ -228,14 +227,15 @@ export default function Play({ route }) {
     const isMediumDevice = screenWidth >= 375 && screenWidth < 414;
     const isLargeDevice = screenWidth >= 414;
     
-    const baseCardWidth = screenWidth * 0.12;
-    const baseCardHeight = baseCardWidth * 1.5;
+    // Match the actual card sizes from Card.js component, but make them 2.5% smaller
+    // small cards: 62x92, tiny cards: 40x56
+    const baseSlotW = isSmallDevice ? 40 : 62;
+    const baseSlotH = isSmallDevice ? 56 : 92;
+    const SLOT_W = Math.floor(baseSlotW * 0.975); // 2.5% smaller
+    const SLOT_H = Math.floor(baseSlotH * 0.975); // 2.5% smaller
     
-    const SLOT_W = Math.max(45, Math.min(70, baseCardWidth));
-    const SLOT_H = Math.max(67, Math.min(105, baseCardHeight));
-    
-    const SLOT_GAP = isSmallDevice ? 2 : isMediumDevice ? 3 : 4;
-    const ROW_GAP = isSmallDevice ? 4 : isMediumDevice ? 6 : 8;
+    const SLOT_GAP = isSmallDevice ? 1 : isMediumDevice ? 1 : 2; // Reduced gaps
+    const ROW_GAP = isSmallDevice ? 1 : isMediumDevice ? 1 : 2; // Even tighter: 1/1/2 pixels
     
     const BOARD_HEIGHT = SLOT_H * 3 + ROW_GAP * 2;
     const CONTROLS_HEIGHT = isSmallDevice ? 70 : isMediumDevice ? 80 : 90;
@@ -267,6 +267,7 @@ export default function Play({ route }) {
   const nextRoundReady = useGame(state => state.nextRoundReady);
   const inFantasyland = useGame(state => state.inFantasyland);
   const currentRound = useGame(state => state.currentRound);
+  const handNumber = useGame(state => state.round);
   
   // Get functions that don't change
   const { applyEvent, setPlacement, unstage, commitTurnLocal } = useGame();
@@ -306,6 +307,7 @@ export default function Play({ route }) {
   const [showDiscards, setShowDiscards] = useState(false);
   const [showScore, setShowScore] = useState(false);
   const [scoreDetail, setScoreDetail] = useState(null);
+  const [sortMode, setSortMode] = useState('rank'); // 'rank' or 'suit'
 
   // measure rows for opponent
   const oTopRef = useRef(null), oMidRef = useRef(null), oBotRef = useRef(null);
@@ -386,6 +388,31 @@ export default function Play({ route }) {
   const stagedMiddle = useMemo(() => staged.placements.filter(p => p.row === "middle").map(p => p.card), [staged]);
   const stagedBottom = useMemo(() => staged.placements.filter(p => p.row === "bottom").map(p => p.card), [staged]);
 
+  // Sort cards by rank or suit
+  const sortCards = (cards, mode) => {
+    const rankOrder = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
+    const suitOrder = ['c', 'd', 'h', 's']; // clubs, diamonds, hearts, spades
+    
+    return [...cards].sort((a, b) => {
+      const aRank = a.slice(0, -1);
+      const aSuit = a.slice(-1).toLowerCase();
+      const bRank = b.slice(0, -1);
+      const bSuit = b.slice(-1).toLowerCase();
+      
+      if (mode === 'rank') {
+        // Sort by rank first, then by suit
+        const rankDiff = rankOrder.indexOf(aRank) - rankOrder.indexOf(bRank);
+        if (rankDiff !== 0) return rankDiff;
+        return suitOrder.indexOf(aSuit) - suitOrder.indexOf(bSuit);
+      } else {
+        // Sort by suit first, then by rank
+        const suitDiff = suitOrder.indexOf(aSuit) - suitOrder.indexOf(bSuit);
+        if (suitDiff !== 0) return suitDiff;
+        return rankOrder.indexOf(aRank) - rankOrder.indexOf(bRank);
+      }
+    });
+  };
+
   // cards available
   const visibleHand = useMemo(() => {
     const taken = new Set([
@@ -394,9 +421,15 @@ export default function Play({ route }) {
     ]);
     if (staged.discard) taken.add(staged.discard);
     const result = hand.filter(c => !taken.has(c));
+    
+    // Sort cards in Fantasy Land mode
+    if (inFantasyland) {
+      return sortCards(result, sortMode);
+    }
+    
     console.log('🎯 visibleHand calculated - inFantasyland:', inFantasyland, 'hand.length:', hand.length, 'result.length:', result.length);
     return result;
-  }, [hand, board.top, board.middle, board.bottom, staged.placements, staged.discard, inFantasyland]);
+  }, [hand, board.top, board.middle, board.bottom, staged.placements, staged.discard, inFantasyland, sortMode]);
 
   // opponent
   const meId = useGame(state => state.userId);
@@ -469,6 +502,10 @@ export default function Play({ route }) {
     return unstage(card);
   };
 
+  const onSort = () => {
+    setSortMode(prev => prev === 'rank' ? 'suit' : 'rank');
+  };
+
   const onCommit = () => {
     if (!canCommit) return;
     const state = useGame.getState();
@@ -536,12 +573,32 @@ export default function Play({ route }) {
 
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }} pointerEvents="box-none">
+    <View style={{ flex: 1, backgroundColor: colors.bg, position: 'relative' }} pointerEvents="box-none">
       <BackButton title="" />
-      {/* Opponent area */}
+      
+      {/* Hand number at top center */}
       <View style={{ 
-        paddingTop: currentResponsive.isSmallDevice ? 60 : 80, 
-        paddingHorizontal: currentResponsive.isSmallDevice ? 8 : 12 
+        position: 'absolute', 
+        top: currentResponsive.isSmallDevice ? 50 : 60, 
+        left: 0, 
+        right: 0, 
+        alignItems: 'center',
+        zIndex: 1001
+      }}>
+        <Text style={{ 
+          color: colors.sub, 
+          fontSize: currentResponsive.isSmallDevice ? 14 : 16,
+          fontWeight: '600'
+        }}>
+          Hand #{handNumber || 1}
+        </Text>
+      </View>
+      {/* Opponent area - fixed height */}
+      <View style={{ 
+        height: currentResponsive.isSmallDevice ? 140 : 160, // Increased height
+        paddingTop: currentResponsive.isSmallDevice ? 80 : 100, // Moved down
+        paddingHorizontal: currentResponsive.isSmallDevice ? 8 : 12,
+        position: 'relative'
       }}>
         {others[0] ? (
           <View style={{ alignItems: "center" }}>
@@ -566,26 +623,22 @@ export default function Play({ route }) {
         />
       </View>
 
-      {/* Player board and hand area */}
-      <View style={{ flex: 1, justifyContent: "center" }}>
-        <View style={{ alignSelf: "center", marginBottom: 8 }}>
-          <NameWithScore name={me.name || 'You'} score={me.score} delta={reveal?.results?.[me.userId]} />
-          {currentRound && (
-            <Text style={{ 
-              textAlign: 'center', 
-              color: colors.sub, 
-              fontSize: 14, 
-              marginTop: 4 
-            }}>
-              Round {currentRound} {inFantasyland ? '(Fantasy Land)' : ''}
-            </Text>
-          )}
-        </View>
+      {/* Player board and hand area - fixed layout */}
+      <View style={{ 
+        flex: 1, 
+        justifyContent: "flex-start", 
+        paddingTop: currentResponsive.isSmallDevice ? 120 : 140, // Even more padding
+        position: 'relative'
+      }}>
+                  <View style={{ alignSelf: "center", marginBottom: 8 }}>
+            <NameWithScore name={me.name || 'You'} score={me.score} delta={reveal?.results?.[me.userId]} />
+          </View>
         <View style={{ 
           alignSelf: "center", 
           height: currentResponsive.BOARD_HEIGHT, 
           paddingHorizontal: currentResponsive.isSmallDevice ? 4 : 6, 
-          justifyContent: "center" 
+          justifyContent: "center",
+          position: 'relative'
         }}>
           {/* Player rows with in-row anchors */}
           <Row
@@ -641,7 +694,8 @@ export default function Play({ route }) {
           paddingHorizontal: currentResponsive.isSmallDevice ? 4 : 6, 
           marginTop: currentResponsive.isSmallDevice ? 8 : 12, 
           height: inFantasyland ? currentResponsive.HAND_HEIGHT * 2 : currentResponsive.HAND_HEIGHT, 
-          justifyContent: "center" 
+          justifyContent: "center",
+          position: 'relative'
         }}>
           {inFantasyland ? (
             // Always 2 rows of 7 cards for fantasyland with minimal spacing
@@ -649,11 +703,11 @@ export default function Play({ route }) {
               <View style={{ 
                 flexDirection: "row", 
                 justifyContent: "center", 
-                marginBottom: currentResponsive.isSmallDevice ? 1 : 2 
+                marginBottom: currentResponsive.SLOT_GAP
               }}>
                 {visibleHand.slice(0, 7).map((card, index) => (
                   <View key={card + ":" + index} style={{ 
-                    marginRight: currentResponsive.isSmallDevice ? 1 : 2 
+                    marginRight: currentResponsive.SLOT_GAP
                   }} pointerEvents="box-none">
                     <DraggableCard card={card} small onDrop={onDrop} />
                   </View>
@@ -662,7 +716,7 @@ export default function Play({ route }) {
               <View style={{ flexDirection: "row", justifyContent: "center" }}>
                 {visibleHand.slice(7, 14).map((card, index) => (
                   <View key={card + ":" + (index + 7)} style={{ 
-                    marginRight: currentResponsive.isSmallDevice ? 1 : 2 
+                    marginRight: currentResponsive.SLOT_GAP
                   }} pointerEvents="box-none">
                     <DraggableCard card={card} small onDrop={onDrop} />
                   </View>
@@ -670,57 +724,68 @@ export default function Play({ route }) {
               </View>
             </View>
           ) : (
-            // Single row for normal hands
-            <FlatList
-              data={visibleHand}
-              horizontal
-              scrollEnabled
-              showsHorizontalScrollIndicator={false}
-              keyExtractor={(c, i) => c + ":" + i}
-              renderItem={({ item }) => (
-                <View style={{ marginRight: SLOT_GAP }} pointerEvents="box-none">
-                  <DraggableCard card={item} small onDrop={onDrop} />
+            // Single row for normal hands - no scrolling
+            <View style={{ 
+              flexDirection: "row", 
+              justifyContent: "center", 
+              flexWrap: "wrap",
+              paddingVertical: 2 
+            }}>
+              {visibleHand.map((card, index) => (
+                <View key={card + ":" + index} style={{ 
+                  marginRight: currentResponsive.SLOT_GAP 
+                }} pointerEvents="box-none">
+                  <DraggableCard card={card} small onDrop={onDrop} />
                 </View>
-              )}
-              contentContainerStyle={{ 
-                paddingVertical: 2, 
-                justifyContent: "center", 
-                alignItems: "center",
-                minWidth: "100%"
-              }}
-              getItemLayout={(data, index) => ({
-                length: SLOT_W + SLOT_GAP,
-                offset: (SLOT_W + SLOT_GAP) * index,
-                index,
-              })}
-            />
+              ))}
+            </View>
           )}
         </View>
 
         {/* Spacer to keep room for pinned controls */}
-        <View style={{ height: currentResponsive.CONTROLS_HEIGHT }} />
+        <View style={{ height: currentResponsive.CONTROLS_HEIGHT, position: 'relative' }} />
       </View>
 
       {/* Controls pinned to bottom (never moves) */}
-              <View style={{ position: "absolute", left: 0, right: 0, bottom: 16, paddingHorizontal: 24, paddingBottom: 12, paddingTop: 12 }}>
+              <View style={{ position: "absolute", left: 0, right: 0, bottom: 16, paddingHorizontal: 24, paddingBottom: 12, paddingTop: 12, zIndex: 1000 }}>
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-          {/* Left: Discard button */}
-          <Pressable
-            onPressIn={() => setShowDiscards(true)}
-            onPressOut={() => setShowDiscards(false)}
-            style={{
-              width: 56,
-              height: 56,
-              borderRadius: 28,
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: colors.panel2,
-              borderWidth: 1,
-              borderColor: colors.outline,
-            }}
-          >
-            <Text style={{ color: colors.text, fontSize: 24 }}>🗑️</Text>
-          </Pressable>
+          {/* Left: Sort button in Fantasy Land, Discard button in normal mode */}
+          {inFantasyland && !reveal ? (
+            <Pressable
+              onPress={onSort}
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: 28,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: colors.panel2,
+                borderWidth: 1,
+                borderColor: colors.outline,
+              }}
+            >
+              <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>
+                SORT
+              </Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              onPressIn={() => setShowDiscards(true)}
+              onPressOut={() => setShowDiscards(false)}
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: 28,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: colors.panel2,
+                borderWidth: 1,
+                borderColor: colors.outline,
+              }}
+            >
+              <Text style={{ color: colors.text, fontSize: 24 }}>🗑️</Text>
+            </Pressable>
+          )}
 
           {/* Center: NEXT ROUND button (only when reveal is active) */}
           {reveal ? (
