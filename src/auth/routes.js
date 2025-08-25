@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { sendOtp, verifyOtp } from "./service.js";
 import { mem } from "../store/mem.js";
-import { setUsername, getUserByUsername, getUserByPhone, setAvatar } from "../store/database.js";
+import { setUsername, getUserByUsername, getUserByPhone, setAvatar, getUserChips } from "../store/database.js";
 
 export const authRoutes = Router();
 
@@ -80,14 +80,16 @@ authRoutes.get("/me", async (req, res) => {
     const profile = mem.players.get(payload.sub);
     if (!profile) return res.status(404).json({ error: "not found" });
     
-    // Get username and avatar from database
+    // Get username, avatar, and chips from database
     const dbUser = await getUserByPhone(profile.phone);
-    console.log("Database user found:", dbUser ? `username: ${dbUser.username}, hasAvatar: ${!!dbUser.avatar}` : "not found");
+    const chips = await getUserChips(payload.dbId);
+    console.log("Database user found:", dbUser ? `username: ${dbUser.username}, hasAvatar: ${!!dbUser.avatar}, chips: ${chips}` : "not found");
     
     const userProfile = {
       ...profile,
       username: dbUser?.username || null,
-      avatar: dbUser?.avatar || null
+      avatar: dbUser?.avatar || null,
+      chips: chips || 1000
     };
     
     console.log("Profile response - username:", userProfile.username, "hasAvatar:", !!userProfile.avatar);

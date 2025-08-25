@@ -384,8 +384,16 @@
     socket.on('connect', () => {
       $('conn').textContent='connected';
       $('roomPill').textContent = roomId;
-      // (re)join room with myName
-      socket.emit("room:join", { roomId, name: myName });
+      
+      // Check if this is a ranked match (from URL parameter)
+      const urlParams = new URLSearchParams(window.location.search);
+      const isRanked = urlParams.get('ranked') === 'true';
+      
+      if (!isRanked) {
+        // Only join room if it's not a ranked match (ranked matches auto-join)
+        socket.emit("room:join", { roomId, name: myName });
+      }
+      
       // Reset next round ready state
       nextRoundReady.clear();
       updateStartButton();
@@ -394,6 +402,7 @@
     socket.on("auth:ok", (x)=>{ myUserId = x?.userId || myUserId; });
 
     socket.on("room:state", (s)=>{ 
+      console.log("🎯 WEB APP: Received room:state event:", s);
       setPhase(s.phase); 
       setCurrentRound(s.currentRound);
       log("STATE\n"+JSON.stringify(s,null,2)); 
@@ -408,9 +417,10 @@
       updateStartButton();
     });
     socket.on("round:deal", ({cards, fantasyland, round})=>{
+      console.log("🎯 WEB APP: Received round:deal event:", {cards, fantasyland, round});
       lastBatch = cards.slice(); 
       myHand = myHand.concat(cards); 
-      renderHand(); 
+      renderHand();
       
       if (fantasyland) {
         // Fantasyland mode: 14 cards, no discard button, 2 rows of 7 cards

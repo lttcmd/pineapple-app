@@ -39,6 +39,7 @@ export async function initDatabase() {
         phone TEXT UNIQUE NOT NULL,
         username TEXT UNIQUE,
         avatar TEXT,
+        chips INTEGER DEFAULT 1000,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -48,6 +49,12 @@ export async function initDatabase() {
         reject(err);
       } else {
         console.log('Database initialized');
+        // Add chips column to existing tables if it doesn't exist
+        db.run('ALTER TABLE users ADD COLUMN chips INTEGER DEFAULT 1000', (err) => {
+          if (err && !err.message.includes('duplicate column name')) {
+            console.error('Error adding chips column:', err);
+          }
+        });
         resolve();
       }
     });
@@ -113,5 +120,40 @@ export async function getAllUsers() {
       if (err) reject(err);
       else resolve(rows);
     });
+  });
+}
+
+export async function getUserChips(userId) {
+  return new Promise((resolve, reject) => {
+    db.get('SELECT chips FROM users WHERE id = ?', [userId], (err, row) => {
+      if (err) reject(err);
+      else resolve(row ? row.chips : 0);
+    });
+  });
+}
+
+export async function updateUserChips(userId, chips) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      'UPDATE users SET chips = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [chips, userId],
+      (err) => {
+        if (err) reject(err);
+        else resolve();
+      }
+    );
+  });
+}
+
+export async function addUserChips(userId, amount) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      'UPDATE users SET chips = chips + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [amount, userId],
+      (err) => {
+        if (err) reject(err);
+        else resolve();
+      }
+    );
   });
 }

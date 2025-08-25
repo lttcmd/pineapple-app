@@ -3,6 +3,7 @@ import { mem } from "../store/mem.js";
 import { Events } from "../net/events.js";
 import { id } from "../utils/ids.js";
 import { createRoom } from "./state.js";
+import { startRoundHandler } from "./rooms.js";
 
 // Queue of players searching for ranked matches
 const rankedQueue = new Map(); // userId -> { socket, name, timestamp }
@@ -81,7 +82,7 @@ function checkForMatches(io) {
       board: { top: [], middle: [], bottom: [] },
       hand: [],
       discards: [],
-      ready: false,
+      ready: true, // Auto-ready for ranked matches
       currentDeal: [],
       score: 0,
       inFantasyland: false,
@@ -96,7 +97,7 @@ function checkForMatches(io) {
       board: { top: [], middle: [], bottom: [] },
       hand: [],
       discards: [],
-      ready: false,
+      ready: true, // Auto-ready for ranked matches
       currentDeal: [],
       score: 0,
       inFantasyland: false,
@@ -118,6 +119,11 @@ function checkForMatches(io) {
       round: room.round,
       roundIndex: room.roundIndex
     });
+    
+    // Auto-start the game for ranked matches
+    setTimeout(() => {
+      startRoundHandler(io, player1.socket, { roomId });
+    }, 1000); // Small delay to ensure room state is sent first
   }
 }
 

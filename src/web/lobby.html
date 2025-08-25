@@ -8,7 +8,8 @@
     body { margin:0; min-height:100vh; display:grid; place-items:center; background:#0f1115; color:#e7e8ea; font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
     .card { width:min(520px, 92vw); background:#131827; border:1px solid #283048; border-radius:14px; padding:22px; box-shadow: 0 6px 18px rgba(0,0,0,.25); }
     h1 { margin:0 0 14px; font-size:20px; font-weight:700; }
-    .welcome { color:#9aa3b2; font-size:16px; text-align:center; margin-bottom:20px; }
+    .welcome { color:#9aa3b2; font-size:16px; text-align:center; margin-bottom:10px; }
+    .chips { color:#7ee787; font-size:14px; text-align:center; margin-bottom:20px; font-weight:600; }
     label { display:block; font-size:13px; color:#9aa3b2; margin:12px 0 6px; }
     input[type=text] { width:100%; padding:12px 14px; border-radius:10px; border:1px solid #2a3244; background:#0f1526; color:#e7e8ea; }
     .row { display:flex; gap:10px; margin-top:14px; flex-wrap:wrap; }
@@ -27,6 +28,7 @@
     <h1>Lobby</h1>
     <div class="muted">Status: <span id="conn" class="pill">connecting…</span></div>
     <div class="welcome">Welcome, <span id="username">Player</span>!</div>
+    <div class="chips">Chips: <span id="chips">1000</span></div>
 
     <div class="row">
       <button id="create">Create Room</button>
@@ -68,6 +70,9 @@
         const profile = await r.json();
         if (profile.username) {
           $('username').textContent = profile.username;
+        }
+        if (profile.chips !== undefined) {
+          $('chips').textContent = profile.chips.toLocaleString();
         }
       } catch (e) {
         console.error('Error loading profile:', e);
@@ -115,7 +120,7 @@
       
       // Listen for match found
       socket.once("ranked:match-found", ({roomId, opponent}) => {
-        showOk(`Match found! Opponent: ${opponent}. Joining...`);
+        showOk(`Match found! Opponent: ${opponent}. Starting game...`);
         setTimeout(()=> { window.location.href = `/play.html?room=${encodeURIComponent(roomId)}&name=${encodeURIComponent(username)}`; }, 200);
       });
       

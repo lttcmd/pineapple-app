@@ -29,10 +29,9 @@ export default function Searching({ navigation }) {
       off = onSocketEvent((evt, data) => {
         if (evt === "ranked:match-found") {
           setSearching(false);
-          // Navigate to the room with the matched opponent
+          // Navigate to the room - it will auto-redirect to Play when game starts
           navigation.replace("Room", { 
-            roomId: data.roomId,
-            opponent: data.opponent 
+            roomId: data.roomId
           });
         } else if (evt === "ranked:searching") {
           setSearching(data.searching);

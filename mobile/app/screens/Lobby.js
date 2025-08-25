@@ -13,6 +13,7 @@ export default function Lobby({ navigation }) {
   const [room, setRoom] = useState("");
   const [username, setUsername] = useState("");
   const [avatar, setAvatar] = useState(null);
+  const [chips, setChips] = useState(1000);
   const applyEvent = useGame(s => s.applyEvent);
 
   const loadProfileData = async () => {
@@ -28,6 +29,9 @@ export default function Lobby({ navigation }) {
       setAvatar(r.data?.avatar || null);
       if (r.data?.username) {
         setUsername(r.data.username);
+      }
+      if (r.data?.chips !== undefined) {
+        setChips(r.data.chips);
       }
     } catch (error) {
       console.error('Error loading profile:', error);
@@ -116,6 +120,7 @@ export default function Lobby({ navigation }) {
             )}
           </View>
           <Text style={styles.profileName}>{username || "Player"}</Text>
+          <Text style={styles.chipCount}>{chips.toLocaleString()} chips</Text>
         </Pressable>
       </View>
 
@@ -203,5 +208,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: colors.text,
+  },
+  chipCount: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.accent,
+    marginTop: 4,
   },
 });
