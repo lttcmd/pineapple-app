@@ -65,7 +65,7 @@ export function leaveRoomHandler(io, socket, { roomId }) {
 
 
 // Handle when all players are ready
-function handleAllPlayersReady(room, io) {
+async function handleAllPlayersReady(room, io) {
   console.log(`=== HANDLE ALL PLAYERS READY ===`);
   console.log(`Room phase: ${room.phase}, currentRound: ${room.currentRound}`);
 
@@ -73,6 +73,64 @@ function handleAllPlayersReady(room, io) {
   const hasFantasylandPlayersFinal = [...room.players.values()].some(player => player.inFantasyland);
   const hasNormalPlayersFinal = [...room.players.values()].some(player => !player.inFantasyland);
   const isMixedModeFinal = hasFantasylandPlayersFinal && hasNormalPlayersFinal;
+  
+  // Handle normal mode transition from initial-set to round phase
+  if (!isMixedModeFinal && room.phase === "initial-set") {
+    console.log(`🔍 HANDLE ALL READY: Normal mode initial-set - transitioning to round phase`);
+    room.phase = "round";
+    room.currentRound = 2; // Move to round 2 after initial set
+    
+    // Deal next round of cards to all players
+    const playersArr = [...room.players.values()];
+    for (const player of playersArr) {
+      if (!player.inFantasyland) {
+        // Normal player: deal 3 cards for round 2
+        const newly = dealNextRoundCards(room, player, room.currentRound);
+        player.currentDeal = newly;
+        player.ready = false; // Reset ready since they have new cards
+        player.roundComplete = false;
+        
+        console.log(`🔍 HANDLE ALL READY: Normal player ${player.name} gets round ${room.currentRound}: [${newly.join(', ')}]`);
+        io.to(player.socketId).emit(Events.DEAL_BATCH, { cards: newly, fantasyland: false, round: room.currentRound });
+      }
+    }
+    
+    emitRoomState(io, room.id);
+    return;
+  }
+  
+  // Handle normal mode subsequent rounds (rounds 2-5)
+  if (!isMixedModeFinal && room.phase === "round") {
+    const playersArr = [...room.players.values()];
+    const allNormalPlayers = playersArr.filter(p => !p.inFantasyland);
+    
+    // Check if all normal players have completed the current round
+    const allCompleted = allNormalPlayers.every(p => p.roundComplete);
+    
+    if (allCompleted && room.currentRound < 5) {
+      console.log(`🔍 HANDLE ALL READY: Normal mode round ${room.currentRound} completed - moving to next round`);
+      room.currentRound += 1;
+      
+      // Deal next round of cards to all normal players
+      for (const player of allNormalPlayers) {
+        const newly = dealNextRoundCards(room, player, room.currentRound);
+        player.currentDeal = newly;
+        player.ready = false; // Reset ready since they have new cards
+        player.roundComplete = false;
+        
+        console.log(`🔍 HANDLE ALL READY: Normal player ${player.name} gets round ${room.currentRound}: [${newly.join(', ')}]`);
+        io.to(player.socketId).emit(Events.DEAL_BATCH, { cards: newly, fantasyland: false, round: room.currentRound });
+      }
+      
+      emitRoomState(io, room.id);
+      return;
+    } else if (allCompleted && room.currentRound >= 5) {
+      console.log(`🔍 HANDLE ALL READY: Normal mode all rounds completed - proceeding to reveal`);
+      // All rounds completed, proceed to reveal
+      room.phase = "reveal";
+      room.handComplete = true;
+    }
+  }
   
   if (isMixedModeFinal && room.phase === "round") {
     const normalPlayer = [...room.players.values()].find(p => !p.inFantasyland);
@@ -162,10 +220,48 @@ function handleAllPlayersReady(room, io) {
           }
         }
 
-        // Update cumulative scores
-        for (const pl of room.players.values()) {
-          const delta = totals[pl.userId] || 0;
-          pl.score = (pl.score || 0) + delta;
+        // Update cumulative scores and convert to chips for ranked matches
+        if (room.isRanked) {
+          // For ranked matches, convert points to chips (1 point = 10 chips)
+          for (const pl of room.players.values()) {
+            const delta = totals[pl.userId] || 0;
+            pl.score = (pl.score || 0) + delta;
+            
+            // Convert points to chips and update table chips
+            const chipDelta = delta * 10;
+            pl.tableChips = (pl.tableChips || 500) + chipDelta;
+            
+            console.log(`Player ${pl.name}: score delta ${delta}, chip delta ${chipDelta}, table chips now ${pl.tableChips}`);
+          }
+          
+          // Check if match is over (one player has all 1000 chips)
+          const playersArr = [...room.players.values()];
+          const winner = playersArr.find(p => p.tableChips >= 1000);
+          const loser = playersArr.find(p => p.tableChips <= 0);
+          
+          if (winner && loser) {
+            // Match is over - update persistent chip balances
+            const { updateUserChips } = await import("../store/database.js");
+            await updateUserChips(winner.dbId, 500); // Winner gets +500 chips
+            await updateUserChips(loser.dbId, -500);  // Loser loses -500 chips
+            
+            // Emit match end event
+            io.to(roomId).emit(Events.MATCH_END, {
+              winner: { userId: winner.userId, name: winner.name },
+              loser: { userId: loser.userId, name: loser.name },
+              finalChips: { winner: winner.tableChips, loser: loser.tableChips }
+            });
+            
+            // Clean up room
+            mem.rooms.delete(roomId);
+            return;
+          }
+        } else {
+          // For non-ranked matches, just update scores normally
+          for (const pl of room.players.values()) {
+            const delta = totals[pl.userId] || 0;
+            pl.score = (pl.score || 0) + delta;
+          }
         }
 
         const fantasylandData = boards.map(board => ({
@@ -563,10 +659,20 @@ function handleAllPlayersReady(room, io) {
 
 /** Start a new hand/round: deal initial 5 to each player (same cards to everyone) */
 export function startRoundHandler(io, socket, { roomId }) {
+  console.log(`🔍 START ROUND HANDLER: Called for room ${roomId}`);
+  
   const room = mem.rooms.get(roomId);
-  if (!room) return socket.emit(Events.ERROR, { message: "Room not found" });
+  if (!room) {
+    console.log(`🔍 START ROUND HANDLER: Room not found`);
+    return socket.emit(Events.ERROR, { message: "Room not found" });
+  }
+
+  console.log(`🔍 START ROUND HANDLER: Room phase: ${room.phase}, players: ${room.players.size}`);
+  console.log(`🔍 START ROUND HANDLER: Players:`, [...room.players.keys()]);
+  console.log(`🔍 START ROUND HANDLER: nextRoundReady:`, [...room.nextRoundReady]);
 
   if (room.players.size < rules.players.min) {
+    console.log(`🔍 START ROUND HANDLER: Not enough players`);
     return socket.emit(Events.ERROR, { message: "Need more players" });
   }
 
@@ -581,7 +687,7 @@ export function startRoundHandler(io, socket, { roomId }) {
     if (allReadyForNextRound(room)) {
       // All players ready, start the first round
       startRound(room);
-      io.to(roomId).emit(Events.START_ROUND, { round: room.round });
+      io.to(roomId).emit(Events.START_ROUND, { round: room.round, roomId: roomId });
 
       // Send initial cards privately to each player based on their fantasyland status
       for (const p of room.players.values()) {
@@ -615,7 +721,7 @@ export function startRoundHandler(io, socket, { roomId }) {
     if (allReadyForNextRound(room)) {
       // All players ready, start the round
       startRound(room);
-      io.to(roomId).emit(Events.START_ROUND, { round: room.round });
+      io.to(roomId).emit(Events.START_ROUND, { round: room.round, roomId: roomId });
 
       // Send initial cards privately to each player based on their fantasyland status
       for (const p of room.players.values()) {
@@ -844,10 +950,14 @@ export function readyHandler(io, socket, { roomId, placements = [], discard = nu
   // NORMAL MODE: Use allReady check
   if (!isMixedMode) {
     // NORMAL MODE: Synchronous progression - use allReady check
+    console.log(`🔍 READY HANDLER: Normal mode check - allReady: ${allReady(room)}`);
+    console.log(`🔍 READY HANDLER: Players ready status:`, [...room.players.values()].map(p => `${p.name}: ${p.ready}`));
+    
     if (allReady(room)) {
       console.log(`🔍 READY HANDLER: Normal mode - all players ready, calling handleAllPlayersReady`);
       handleAllPlayersReady(room, io);
     } else {
+      console.log(`🔍 READY HANDLER: Normal mode - not all players ready yet`);
       emitRoomState(io, roomId);
     }
   }

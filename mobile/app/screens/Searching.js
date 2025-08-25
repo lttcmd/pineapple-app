@@ -37,7 +37,7 @@ export default function Searching({ navigation }) {
         } else if (evt === "round:start") {
           // Game has started, navigate directly to Play
           navigation.replace("Play", { 
-            roomId: matchedRoomId
+            roomId: data.roomId
           });
         }
       });
@@ -50,7 +50,7 @@ export default function Searching({ navigation }) {
       // Cancel search when leaving the screen
       emit("ranked:cancel");
     };
-  }, [navigation]);
+  }, [navigation, matchedRoomId]);
 
   const handleCancel = () => {
     emit("ranked:cancel");

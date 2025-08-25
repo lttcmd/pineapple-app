@@ -4,12 +4,22 @@ import { Events } from "../net/events.js";
 import { id } from "../utils/ids.js";
 import { createRoom } from "./state.js";
 import { startRoundHandler } from "./rooms.js";
+import { getUserChips, updateUserChips } from "../store/database.js";
 
 // Queue of players searching for ranked matches
 const rankedQueue = new Map(); // userId -> { socket, name, timestamp }
 
-export function searchRankedHandler(io, socket, { name }) {
+export async function searchRankedHandler(io, socket, { name }) {
   const userId = socket.user.sub;
+  
+  // Check if player has enough chips (500 chips required for ranked match)
+  const dbId = socket.user.dbId;
+  const currentChips = await getUserChips(dbId);
+  
+  if (currentChips < 500) {
+    socket.emit(Events.ERROR, { message: "Need at least 500 chips to play ranked matches" });
+    return;
+  }
   
   // Remove from any existing queue
   rankedQueue.delete(userId);
@@ -18,7 +28,8 @@ export function searchRankedHandler(io, socket, { name }) {
   rankedQueue.set(userId, {
     socket,
     name: name || "Player",
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    dbId: dbId
   });
   
   // Emit searching status
@@ -38,7 +49,7 @@ export function cancelSearchHandler(io, socket) {
   socket.emit(Events.SEARCHING_STATUS, { searching: false });
 }
 
-function checkForMatches(io) {
+async function checkForMatches(io) {
   const queueEntries = Array.from(rankedQueue.entries());
   
   // Need at least 2 players to match
@@ -72,9 +83,13 @@ function checkForMatches(io) {
   player1.socket.join(roomId);
   player2.socket.join(roomId);
   
-  // Add players to room
+  // Add players to room with chip stakes
   const room = mem.rooms.get(roomId);
   if (room) {
+    // Stake 500 chips from each player
+    await updateUserChips(player1.dbId, -500);
+    await updateUserChips(player2.dbId, -500);
+    
     room.players.set(player1Id, {
       userId: player1Id,
       name: player1.name,
@@ -82,9 +97,10 @@ function checkForMatches(io) {
       board: { top: [], middle: [], bottom: [] },
       hand: [],
       discards: [],
-      ready: true, // Auto-ready for ranked matches
+      ready: false, // Will be set to ready after startRound
       currentDeal: [],
       score: 0,
+      tableChips: 500, // Initial stake on table
       inFantasyland: false,
       hasPlayedFantasylandHand: false,
       roundComplete: false,
@@ -97,17 +113,14 @@ function checkForMatches(io) {
       board: { top: [], middle: [], bottom: [] },
       hand: [],
       discards: [],
-      ready: true, // Auto-ready for ranked matches
+      ready: false, // Will be set to ready after startRound
       currentDeal: [],
       score: 0,
+      tableChips: 500, // Initial stake on table
       inFantasyland: false,
       hasPlayedFantasylandHand: false,
       roundComplete: false,
     });
-    
-    // Add both players to nextRoundReady set for auto-start
-    room.nextRoundReady.add(player1Id);
-    room.nextRoundReady.add(player2Id);
     
     // Emit room state to both players
     io.to(roomId).emit(Events.ROOM_STATE, {
@@ -126,6 +139,16 @@ function checkForMatches(io) {
     
     // Auto-start the game for ranked matches
     setTimeout(() => {
+      console.log(`🔍 RANKED MATCHMAKING: Auto-starting game for room ${roomId}`);
+      console.log(`🔍 RANKED MATCHMAKING: Players in room:`, [...room.players.keys()]);
+      console.log(`🔍 RANKED MATCHMAKING: Room phase: ${room.phase}`);
+      
+      // Add both players to nextRoundReady set for auto-start
+      room.nextRoundReady.add(player1Id);
+      room.nextRoundReady.add(player2Id);
+      
+      console.log(`🔍 RANKED MATCHMAKING: Added players to nextRoundReady:`, [...room.nextRoundReady]);
+      
       startRoundHandler(io, player1.socket, { roomId });
     }, 1000); // Small delay to ensure room state is sent first
   }

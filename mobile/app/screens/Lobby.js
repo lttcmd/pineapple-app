@@ -130,12 +130,20 @@ export default function Lobby({ navigation }) {
 
       <Panel style={{ gap:10 }}>
         <Button 
-          title="Play Ranked" 
+          title={`Play Ranked (500 chips)`}
+          disabled={chips < 500}
           onPress={() => {
-            emit("ranked:search", { name: username || "Player" });
-            navigation.navigate("Searching");
+            if (chips >= 500) {
+              emit("ranked:search", { name: username || "Player" });
+              navigation.navigate("Searching");
+            }
           }} 
         />
+        {chips < 500 && (
+          <Text style={{ color: colors.danger, fontSize: 12, textAlign: 'center' }}>
+            Need at least 500 chips to play ranked
+          </Text>
+        )}
       </Panel>
 
       <Panel style={{ gap:10 }}>

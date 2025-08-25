@@ -35,8 +35,9 @@
     </div>
 
     <div class="row">
-      <button id="ranked">Play Ranked</button>
+      <button id="ranked">Play Ranked (500 chips)</button>
     </div>
+    <div id="ranked-error" class="err" style="display: none;">Need at least 500 chips to play ranked</div>
     
     <div class="row" id="searching-row" style="display: none;">
       <button id="cancel-search" class="signout">Cancel Search</button>
@@ -111,6 +112,13 @@
     // Ranked matchmaking
     $('ranked').onclick = () => {
       const username = $('username').textContent;
+      const chips = parseInt($('chips').textContent.replace(/,/g, '')) || 0;
+      
+      if (chips < 500) {
+        showErr("Need at least 500 chips to play ranked matches");
+        return;
+      }
+      
       socket.emit("ranked:search", { name: username });
       showOk("Searching for opponent...");
       

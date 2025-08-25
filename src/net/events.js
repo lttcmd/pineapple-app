@@ -20,6 +20,7 @@ export const Events = {
   CANCEL_SEARCH: "ranked:cancel",
   MATCH_FOUND: "ranked:match-found",
   SEARCHING_STATUS: "ranked:searching",
+  MATCH_END: "ranked:match-end",
 
   ERROR: "error:msg",
   CHAT: "chat:msg"
