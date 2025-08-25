@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Animated } from "react-native";
+import { Animated, Dimensions } from "react-native";
 
 // Helper function to compute total committed cards
 const committedTotal = (b) => b.top.length + b.middle.length + b.bottom.length;
@@ -14,14 +14,49 @@ import BackButton from "../components/BackButton";
 import { useDrag } from "../drag/DragContext";
 import { play as playSfx } from "../sound/sfx";
 
-  // constants
-  const SLOT_W = 59;   // 4% smaller (62 * 0.96)
-  const SLOT_H = 88;   // 4% smaller (92 * 0.96)
-  const SLOT_GAP = 3;  // tighter
-  const ROW_GAP = 6;   // vertical gap between rows
-const BOARD_HEIGHT = SLOT_H * 3 + ROW_GAP * 2; // fixed board area height (3 rows)
-const CONTROLS_HEIGHT = 80; // pinned bottom bar height incl. padding
-const HAND_HEIGHT = SLOT_H + 24; // fixed hand area height to prevent layout jump
+// Responsive design system
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+
+// Calculate responsive dimensions based on screen size
+const getResponsiveDimensions = () => {
+  const isSmallDevice = screenWidth < 375; // iPhone SE, small Android
+  const isMediumDevice = screenWidth >= 375 && screenWidth < 414; // iPhone 12, 13, 14
+  const isLargeDevice = screenWidth >= 414; // iPhone 12/13/14 Pro Max, large Android
+  
+  // Base card dimensions that scale with screen size
+  const baseCardWidth = screenWidth * 0.12; // 12% of screen width
+  const baseCardHeight = baseCardWidth * 1.5; // Maintain aspect ratio
+  
+  // Responsive slot dimensions
+  const SLOT_W = Math.max(45, Math.min(70, baseCardWidth)); // Min 45px, Max 70px
+  const SLOT_H = Math.max(67, Math.min(105, baseCardHeight)); // Min 67px, Max 105px
+  
+  // Responsive gaps
+  const SLOT_GAP = isSmallDevice ? 2 : isMediumDevice ? 3 : 4;
+  const ROW_GAP = isSmallDevice ? 4 : isMediumDevice ? 6 : 8;
+  
+  // Responsive board and control heights
+  const BOARD_HEIGHT = SLOT_H * 3 + ROW_GAP * 2;
+  const CONTROLS_HEIGHT = isSmallDevice ? 70 : isMediumDevice ? 80 : 90;
+  const HAND_HEIGHT = SLOT_H + (isSmallDevice ? 16 : isMediumDevice ? 20 : 24);
+  
+  return {
+    SLOT_W,
+    SLOT_H,
+    SLOT_GAP,
+    ROW_GAP,
+    BOARD_HEIGHT,
+    CONTROLS_HEIGHT,
+    HAND_HEIGHT,
+    isSmallDevice,
+    isMediumDevice,
+    isLargeDevice
+  };
+};
+
+// Get responsive dimensions
+const responsive = getResponsiveDimensions();
+const { SLOT_W, SLOT_H, SLOT_GAP, ROW_GAP, BOARD_HEIGHT, CONTROLS_HEIGHT, HAND_HEIGHT } = responsive;
 
 
 // Foul effect - generate random transformations for "broken" cards
@@ -77,47 +112,52 @@ function NameWithScore({ name, score, delta }) {
   );
 }
 
-function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onMidLayout, onBotLayout, topAnchorRef, midAnchorRef, botAnchorRef, isFouled, inFantasyland }) {
+function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onMidLayout, onBotLayout, topAnchorRef, midAnchorRef, botAnchorRef, isFouled, inFantasyland, responsive }) {
   const tiny = true;
   const rainbowColor = useRainbowGlow();
-      const capRow = (ref, onLayout, anchorRef, cards, cap, rowOffset = 0) => (
-      <View ref={ref} onLayout={onLayout} style={{ 
-        flexDirection: "row", 
-        alignSelf: "center", 
-        marginBottom: 2, 
-        position: 'relative',
-        // Rainbow glow for Fantasy Land
-        ...(inFantasyland && {
-          shadowColor: rainbowColor,
-          shadowOffset: { width: 0, height: 0 },
-          shadowOpacity: 0.8,
-          shadowRadius: 8,
-          elevation: 8,
-        })
-      }}>
-        {/* top-right anchor marker inside the row */}
-        <View ref={anchorRef} pointerEvents="none" style={{ position: 'absolute', top: 0, right: 0, width: 1, height: 1 }} />
-        {Array.from({ length: cap }).map((_, i) => {
-          const foulStyle = isFouled ? getFoulTransform(rowOffset + i) : {};
-          return (
-            <View key={"opp_"+i} style={[{ marginRight: 3 }, foulStyle]}>
-              {hidden ? (
-                <Animated.View style={{ 
-                  width: 40, 
-                  height: 56, 
-                  borderRadius: 8, 
-                  borderWidth: 2, 
-                  borderColor: inFantasyland ? rainbowColor : colors.outline, 
-                  backgroundColor: colors.panel2 
-                }} />
-              ) : (
-                cards[i] ? <Card card={cards[i]} tiny noMargin /> : <View style={{ width: 40, height: 56 }} />
-              )}
-            </View>
-          );
-        })}
-      </View>
-    );
+  
+  // Responsive opponent card dimensions (smaller than player cards)
+  const oppCardWidth = responsive.SLOT_W * 0.7; // 70% of player card width
+  const oppCardHeight = responsive.SLOT_H * 0.7; // 70% of player card height
+  
+  const capRow = (ref, onLayout, anchorRef, cards, cap, rowOffset = 0) => (
+    <View ref={ref} onLayout={onLayout} style={{ 
+      flexDirection: "row", 
+      alignSelf: "center", 
+      marginBottom: responsive.isSmallDevice ? 1 : 2, 
+      position: 'relative',
+      // Rainbow glow for Fantasy Land
+      ...(inFantasyland && {
+        shadowColor: rainbowColor,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.8,
+        shadowRadius: 8,
+        elevation: 8,
+      })
+    }}>
+      {/* top-right anchor marker inside the row */}
+      <View ref={anchorRef} pointerEvents="none" style={{ position: 'absolute', top: 0, right: 0, width: 1, height: 1 }} />
+      {Array.from({ length: cap }).map((_, i) => {
+        const foulStyle = isFouled ? getFoulTransform(rowOffset + i) : {};
+        return (
+          <View key={"opp_"+i} style={[{ marginRight: responsive.isSmallDevice ? 2 : 3 }, foulStyle]}>
+            {hidden ? (
+              <Animated.View style={{ 
+                width: oppCardWidth, 
+                height: oppCardHeight, 
+                borderRadius: 6, 
+                borderWidth: 1.5, 
+                borderColor: inFantasyland ? rainbowColor : colors.outline, 
+                backgroundColor: colors.panel2 
+              }} />
+            ) : (
+              cards[i] ? <Card card={cards[i]} tiny noMargin /> : <View style={{ width: oppCardWidth, height: oppCardHeight }} />
+            )}
+          </View>
+        );
+      })}
+    </View>
+  );
   return (
     <View style={{ paddingVertical: 4 }}>
       {capRow(topRef, onTopLayout, topAnchorRef, board.top || [], 3, 0)}
@@ -168,6 +208,52 @@ function ScoreBubbles({ show, playerAnchors, oppAnchors, detail }) {
 
 export default function Play({ route }) {
   const { roomId } = route.params || {};
+  
+  // Handle screen size changes and orientation changes
+  const [dimensions, setDimensions] = useState(Dimensions.get('window'));
+  
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      setDimensions(window);
+    });
+    
+    return () => subscription?.remove();
+  }, []);
+  
+  // Recalculate responsive dimensions when screen size changes
+  const currentResponsive = useMemo(() => {
+    const { width: screenWidth } = dimensions;
+    
+    const isSmallDevice = screenWidth < 375;
+    const isMediumDevice = screenWidth >= 375 && screenWidth < 414;
+    const isLargeDevice = screenWidth >= 414;
+    
+    const baseCardWidth = screenWidth * 0.12;
+    const baseCardHeight = baseCardWidth * 1.5;
+    
+    const SLOT_W = Math.max(45, Math.min(70, baseCardWidth));
+    const SLOT_H = Math.max(67, Math.min(105, baseCardHeight));
+    
+    const SLOT_GAP = isSmallDevice ? 2 : isMediumDevice ? 3 : 4;
+    const ROW_GAP = isSmallDevice ? 4 : isMediumDevice ? 6 : 8;
+    
+    const BOARD_HEIGHT = SLOT_H * 3 + ROW_GAP * 2;
+    const CONTROLS_HEIGHT = isSmallDevice ? 70 : isMediumDevice ? 80 : 90;
+    const HAND_HEIGHT = SLOT_H + (isSmallDevice ? 16 : isMediumDevice ? 20 : 24);
+    
+    return {
+      SLOT_W,
+      SLOT_H,
+      SLOT_GAP,
+      ROW_GAP,
+      BOARD_HEIGHT,
+      CONTROLS_HEIGHT,
+      HAND_HEIGHT,
+      isSmallDevice,
+      isMediumDevice,
+      isLargeDevice
+    };
+  }, [dimensions]);
   
 
   
@@ -453,7 +539,10 @@ export default function Play({ route }) {
     <View style={{ flex: 1, backgroundColor: colors.bg }} pointerEvents="box-none">
       <BackButton title="" />
       {/* Opponent area */}
-      <View style={{ paddingTop: 80, paddingHorizontal: 12 }}>
+      <View style={{ 
+        paddingTop: currentResponsive.isSmallDevice ? 60 : 80, 
+        paddingHorizontal: currentResponsive.isSmallDevice ? 8 : 12 
+      }}>
         {others[0] ? (
           <View style={{ alignItems: "center" }}>
             <NameWithScore name={others[0].name} score={others[0].score} delta={reveal?.results?.[others[0].userId]} />
@@ -473,9 +562,8 @@ export default function Play({ route }) {
           botAnchorRef={oBotAnchorRef}
           isFouled={showScore && scoreDetail?.b?.foul}
           inFantasyland={others[0]?.inFantasyland || false}
+          responsive={currentResponsive}
         />
-
-
       </View>
 
       {/* Player board and hand area */}
@@ -493,7 +581,12 @@ export default function Play({ route }) {
             </Text>
           )}
         </View>
-        <View style={{ alignSelf: "center", height: BOARD_HEIGHT, paddingHorizontal: 6, justifyContent: "center" }}>
+        <View style={{ 
+          alignSelf: "center", 
+          height: currentResponsive.BOARD_HEIGHT, 
+          paddingHorizontal: currentResponsive.isSmallDevice ? 4 : 6, 
+          justifyContent: "center" 
+        }}>
           {/* Player rows with in-row anchors */}
           <Row
             capacity={3}
@@ -508,6 +601,7 @@ export default function Play({ route }) {
             isFouled={showScore && scoreDetail?.a?.foul}
             rowOffset={0}
             inFantasyland={inFantasyland}
+            responsive={currentResponsive}
           />
           <Row
             capacity={5}
@@ -522,6 +616,7 @@ export default function Play({ route }) {
             isFouled={showScore && scoreDetail?.a?.foul}
             rowOffset={3}
             inFantasyland={inFantasyland}
+            responsive={currentResponsive}
           />
           <Row
             capacity={5}
@@ -536,30 +631,39 @@ export default function Play({ route }) {
             isFouled={showScore && scoreDetail?.a?.foul}
             rowOffset={8}
             inFantasyland={inFantasyland}
+            responsive={currentResponsive}
           />
         </View>
         
 
 
         <View style={{ 
-          paddingHorizontal: 6, 
-          marginTop: 12, 
-          height: inFantasyland ? HAND_HEIGHT * 2 : HAND_HEIGHT, 
+          paddingHorizontal: currentResponsive.isSmallDevice ? 4 : 6, 
+          marginTop: currentResponsive.isSmallDevice ? 8 : 12, 
+          height: inFantasyland ? currentResponsive.HAND_HEIGHT * 2 : currentResponsive.HAND_HEIGHT, 
           justifyContent: "center" 
         }}>
           {inFantasyland ? (
             // Always 2 rows of 7 cards for fantasyland with minimal spacing
             <View style={{ flex: 1, justifyContent: "center" }}>
-              <View style={{ flexDirection: "row", justifyContent: "center", marginBottom: 1 }}>
+              <View style={{ 
+                flexDirection: "row", 
+                justifyContent: "center", 
+                marginBottom: currentResponsive.isSmallDevice ? 1 : 2 
+              }}>
                 {visibleHand.slice(0, 7).map((card, index) => (
-                  <View key={card + ":" + index} style={{ marginRight: 1 }} pointerEvents="box-none">
+                  <View key={card + ":" + index} style={{ 
+                    marginRight: currentResponsive.isSmallDevice ? 1 : 2 
+                  }} pointerEvents="box-none">
                     <DraggableCard card={card} small onDrop={onDrop} />
                   </View>
                 ))}
               </View>
               <View style={{ flexDirection: "row", justifyContent: "center" }}>
                 {visibleHand.slice(7, 14).map((card, index) => (
-                  <View key={card + ":" + (index + 7)} style={{ marginRight: 1 }} pointerEvents="box-none">
+                  <View key={card + ":" + (index + 7)} style={{ 
+                    marginRight: currentResponsive.isSmallDevice ? 1 : 2 
+                  }} pointerEvents="box-none">
                     <DraggableCard card={card} small onDrop={onDrop} />
                   </View>
                 ))}
@@ -594,7 +698,7 @@ export default function Play({ route }) {
         </View>
 
         {/* Spacer to keep room for pinned controls */}
-        <View style={{ height: CONTROLS_HEIGHT }} />
+        <View style={{ height: currentResponsive.CONTROLS_HEIGHT }} />
       </View>
 
       {/* Controls pinned to bottom (never moves) */}
@@ -756,15 +860,16 @@ function Row({
   isFouled = false,
   rowOffset = 0,
   inFantasyland = false,
+  responsive,
 }) {
   const committedCount = committed.length;
   const stagedCount = staged.length;
   const remaining = Math.max(0, capacity - committedCount - stagedCount);
-  const gap = compact ? 2 : SLOT_GAP;
+  const gap = compact ? (responsive.isSmallDevice ? 1 : 2) : responsive.SLOT_GAP;
   const rainbowColor = useRainbowGlow();
 
   return (
-    <View style={{ marginBottom: ROW_GAP }} pointerEvents="box-none">
+    <View style={{ marginBottom: responsive.ROW_GAP }} pointerEvents="box-none">
       <View
         ref={zoneRef}
         onLayout={onLayout}
@@ -807,12 +912,12 @@ function Row({
           <Animated.View
             key={"p_"+i}
             style={{
-              width: SLOT_W,
-              height: SLOT_H,
+              width: responsive.SLOT_W,
+              height: responsive.SLOT_H,
               marginRight: gap,
-              borderWidth: 2,
+              borderWidth: responsive.isSmallDevice ? 1.5 : 2,
               borderColor: inFantasyland ? rainbowColor : (highlightRow ? colors.accent : colors.outline),
-              borderRadius: 10,
+              borderRadius: responsive.isSmallDevice ? 8 : 10,
               backgroundColor: "rgba(255,255,255,0.05)",
             }}
             pointerEvents="none"
