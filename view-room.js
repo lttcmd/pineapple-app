@@ -2,7 +2,7 @@
 import fetch from 'node-fetch';
 
 const roomId = process.argv[2];
-const refreshInterval = 2000; // 2 seconds
+const refreshInterval = 15000; // 15 seconds
 
 if (!roomId) {
   console.log("Usage: node view-room.js <roomId>");
@@ -78,6 +78,8 @@ async function viewRoom() {
     console.log(`📊 Phase: ${room.phase}`);
     console.log(`🔄 Round: ${room.round}`);
     console.log(`📈 Round Index: ${room.roundIndex}`);
+    console.log(`🎯 Current Round: ${room.currentRound || 'N/A'}`);
+    console.log(`🏆 Ranked Match: ${room.isRanked ? 'YES' : 'NO'}`);
     console.log(`⏰ Timer Active: ${room.timer.isActive}`);
     console.log(`⏱️  Time Left: ${room.timer.timeLeft}ms`);
 
@@ -102,7 +104,11 @@ async function viewRoom() {
     for (const [userId, player] of Object.entries(room.players)) {
       console.log(`  ${player.name} (${userId.slice(-4)})`);
       console.log(`    Score: ${player.score || 0}`);
+      if (room.isRanked) {
+        console.log(`    💰 Table Chips: ${player.tableChips || 500}`);
+      }
       console.log(`    Ready: ${player.ready}`);
+      console.log(`    Round Complete: ${player.roundComplete || false}`);
       console.log(`    In Fantasyland: ${player.inFantasyland || false}`);
       console.log(`    Has Played Fantasyland Hand: ${player.hasPlayedFantasylandHand || false}`);
       console.log(`    Hand Card Index: ${player.handCardIndex || 0}`);
@@ -131,10 +137,35 @@ async function viewRoom() {
 
     if (room.phase === "reveal") {
       console.log("🎯 GAME COMPLETE - Scoring phase");
+      if (room.isRanked) {
+        console.log("💰 CHIP SYSTEM: Hand complete - chips will be transferred");
+      }
     } else if (room.phase === "lobby") {
       console.log("🏠 Waiting for players to start");
     } else {
       console.log("🎲 Game in progress");
+    }
+
+    // Show ranked match specific info
+    if (room.isRanked) {
+      console.log(`\n🏆 RANKED MATCH INFO:`);
+      console.log(`   💰 Total chips on table: 1000`);
+      console.log(`   🎯 Match ends when one player has all 1000 chips`);
+      console.log(`   📊 1 point = 10 chips conversion`);
+      
+      // Show chip distribution
+      const playersArr = Object.values(room.players);
+      const totalChips = playersArr.reduce((sum, p) => sum + (p.tableChips || 500), 0);
+      console.log(`   💰 Current chip distribution: ${totalChips}/1000`);
+      
+      // Check for match end conditions
+      const winner = playersArr.find(p => (p.tableChips || 500) >= 1000);
+      const loser = playersArr.find(p => (p.tableChips || 500) <= 0);
+      if (winner) {
+        console.log(`   🏆 MATCH END: ${winner.name} wins with ${winner.tableChips} chips!`);
+      } else if (loser) {
+        console.log(`   💀 MATCH END: ${loser.name} loses with ${loser.tableChips} chips!`);
+      }
     }
 
     // Show status

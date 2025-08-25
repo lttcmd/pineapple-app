@@ -94,6 +94,7 @@ async function checkForMatches(io) {
       userId: player1Id,
       name: player1.name,
       socketId: player1.socket.id,
+      dbId: player1.dbId, // Add dbId for chip updates
       board: { top: [], middle: [], bottom: [] },
       hand: [],
       discards: [],
@@ -110,6 +111,7 @@ async function checkForMatches(io) {
       userId: player2Id,
       name: player2.name,
       socketId: player2.socket.id,
+      dbId: player2.dbId, // Add dbId for chip updates
       board: { top: [], middle: [], bottom: [] },
       hand: [],
       discards: [],
@@ -125,10 +127,12 @@ async function checkForMatches(io) {
     // Emit room state to both players
     io.to(roomId).emit(Events.ROOM_STATE, {
       roomId,
+      isRanked: room.isRanked, // Add ranked flag
       players: Array.from(room.players.values()).map(p => ({
         userId: p.userId,
         name: p.name,
         score: p.score,
+        tableChips: p.tableChips || 0, // Add table chips
         ready: p.ready,
         inFantasyland: p.inFantasyland
       })),

@@ -98,17 +98,33 @@ function useRainbowGlow() {
   return rainbowColor;
 }
 
-function NameWithScore({ name, score, delta }) {
-  const deltaText = typeof delta === 'number' ? (delta >= 0 ? `+${delta}` : `${delta}`) : null;
-  const deltaColor = deltaText && deltaText.startsWith('+') ? colors.ok || '#2e7d32' : '#C62828';
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
-      <Text style={{ color: colors.text, fontWeight: '700', fontSize: 18, marginRight: 8 }}>{name}</Text>
-      <Text style={{ color: colors.sub, fontSize: 16 }}>
-        {score ?? 0} {deltaText ? <Text style={{ color: deltaColor }}> {deltaText}</Text> : null}
-      </Text>
-    </View>
-  );
+function NameWithScore({ name, score, delta, tableChips, isRanked }) {
+  // For ranked matches, show chips instead of score
+  if (isRanked) {
+    const chipText = `${tableChips || 500} chips`;
+    const deltaText = typeof delta === 'number' ? (delta >= 0 ? `+${delta * 10}` : `${delta * 10}`) : null;
+    const deltaColor = deltaText && deltaText.startsWith('+') ? colors.ok || '#2e7d32' : '#C62828';
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
+        <Text style={{ color: colors.text, fontWeight: '700', fontSize: 18, marginRight: 8 }}>{name}</Text>
+        <Text style={{ color: colors.sub, fontSize: 16 }}>
+          {chipText} {deltaText ? <Text style={{ color: deltaColor }}> {deltaText}</Text> : null}
+        </Text>
+      </View>
+    );
+  } else {
+    // For regular matches, show score as before
+    const deltaText = typeof delta === 'number' ? (delta >= 0 ? `+${delta}` : `${delta}`) : null;
+    const deltaColor = deltaText && deltaText.startsWith('+') ? colors.ok || '#2e7d32' : '#C62828';
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
+        <Text style={{ color: colors.text, fontWeight: '700', fontSize: 18, marginRight: 8 }}>{name}</Text>
+        <Text style={{ color: colors.sub, fontSize: 16 }}>
+          {score ?? 0} {deltaText ? <Text style={{ color: deltaColor }}> {deltaText}</Text> : null}
+        </Text>
+      </View>
+    );
+  }
 }
 
 function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onMidLayout, onBotLayout, topAnchorRef, midAnchorRef, botAnchorRef, isFouled, inFantasyland, responsive }) {
@@ -268,6 +284,7 @@ export default function Play({ route }) {
   const inFantasyland = useGame(state => state.inFantasyland);
   const currentRound = useGame(state => state.currentRound);
   const handNumber = useGame(state => state.round);
+  const isRanked = useGame(state => state.isRanked);
   
   // Get functions that don't change
   const { applyEvent, setPlacement, unstage, commitTurnLocal } = useGame();
@@ -602,7 +619,13 @@ export default function Play({ route }) {
       }}>
         {others[0] ? (
           <View style={{ alignItems: "center" }}>
-            <NameWithScore name={others[0].name} score={others[0].score} delta={reveal?.results?.[others[0].userId]} />
+            <NameWithScore 
+              name={others[0].name} 
+              score={others[0].score} 
+              tableChips={others[0].tableChips}
+              isRanked={isRanked}
+              delta={reveal?.results?.[others[0].userId]} 
+            />
           </View>
         ) : null}
         <OpponentBoard
@@ -631,7 +654,13 @@ export default function Play({ route }) {
         position: 'relative'
       }}>
                   <View style={{ alignSelf: "center", marginBottom: 8 }}>
-            <NameWithScore name={me.name || 'You'} score={me.score} delta={reveal?.results?.[me.userId]} />
+            <NameWithScore 
+              name={me.name || 'You'} 
+              score={me.score} 
+              tableChips={me.tableChips}
+              isRanked={isRanked}
+              delta={reveal?.results?.[me.userId]} 
+            />
           </View>
         <View style={{ 
           alignSelf: "center", 

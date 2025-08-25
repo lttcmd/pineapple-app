@@ -44,6 +44,11 @@ export function startRound(room) {
   
 
   for (const p of room.players.values()) {
+    // Debug logging for chip preservation
+    if (room.isRanked) {
+      console.log(`🔍 START ROUND: Preserving tableChips for ${p.name}: ${p.tableChips || 500}`);
+    }
+    
     p.board = { top: [], middle: [], bottom: [] };
     p.hand = [];
     p.discards = [];
@@ -53,6 +58,12 @@ export function startRound(room) {
     p.handCardIndex = 0; // Track which card from handCards to deal next
     p.roundComplete = false; // Track if player has completed current round
     // Note: inFantasyland status is preserved between rounds
+    // Note: tableChips is preserved for ranked matches (don't reset)
+    
+    // Verify tableChips is still preserved after reset
+    if (room.isRanked) {
+      console.log(`🔍 START ROUND: After reset - ${p.name} tableChips: ${p.tableChips || 500}`);
+    }
   }
   
   // Check if any players are in fantasyland and deal accordingly

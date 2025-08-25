@@ -20,6 +20,7 @@ export const useGame = create((set, get) => ({
   round: null,
   currentRound: null, // Track current round within the hand
   players: [],
+  isRanked: false, // Track if this is a ranked match
 
   board: { top: [], middle: [], bottom: [] },  // committed (locked)
   currentDeal: [],                               // last dealt (5 or 3)
@@ -277,6 +278,7 @@ export const useGame = create((set, get) => ({
           phase: data.phase ?? s.phase,
           round: data.round ?? s.round,
           players: Array.isArray(data.players) ? data.players : s.players,
+          isRanked: data.isRanked ?? s.isRanked,
         };
 
       case "round:end":

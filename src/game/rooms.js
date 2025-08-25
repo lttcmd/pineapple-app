@@ -124,12 +124,93 @@ async function handleAllPlayersReady(room, io) {
       
       emitRoomState(io, room.id);
       return;
-    } else if (allCompleted && room.currentRound >= 5) {
-      console.log(`🔍 HANDLE ALL READY: Normal mode all rounds completed - proceeding to reveal`);
-      // All rounds completed, proceed to reveal
-      room.phase = "reveal";
-      room.handComplete = true;
-    }
+            } else if (allCompleted && room.currentRound >= 5) {
+          console.log(`🔍 HANDLE ALL READY: Normal mode all rounds completed - proceeding to reveal`);
+          // All rounds completed, proceed to reveal
+          room.phase = "reveal";
+          room.handComplete = true;
+          
+          // Process chip updates for ranked matches immediately when reveal phase starts
+          if (room.isRanked) {
+            console.log(`🔍 CHIP SYSTEM: Processing ranked match chip updates at reveal start`);
+            // Calculate scores first
+            const boards = [];
+            const totals = {};
+            
+            for (const pl of room.players.values()) {
+              boards.push({
+                userId: pl.userId,
+                board: pl.board,
+                inFantasyland: pl.inFantasyland
+              });
+            }
+            
+            // Calculate pairwise scores
+            const pairwise = [];
+            for (let i = 0; i < boards.length; i++) {
+              for (let j = i + 1; j < boards.length; j++) {
+                const A = boards[i];
+                const B = boards[j];
+                const det = settlePairwiseDetailed(A.board, B.board);
+                pairwise.push({
+                  aUserId: A.userId,
+                  bUserId: B.userId,
+                  a: det.a,
+                  b: det.b
+                });
+
+                if (boards.length === 2) {
+                  const grossA = Math.max(det.a.lines.top, 0) + Math.max(det.a.lines.middle, 0) + Math.max(det.a.lines.bottom, 0)
+                    + (det.a.scoop > 0 ? det.a.scoop : 0) + det.a.royalties;
+                  const grossB = Math.max(det.b.lines.top, 0) + Math.max(det.b.lines.middle, 0) + Math.max(det.b.lines.bottom, 0)
+                    + (det.b.scoop > 0 ? det.b.scoop : 0) + det.b.royalties;
+                  const diff = grossA - grossB;
+                  totals[A.userId] = (totals[A.userId] || 0) + diff;
+                  totals[B.userId] = (totals[B.userId] || 0) - diff;
+                }
+              }
+            }
+            
+            // Update chip stacks
+            for (const pl of room.players.values()) {
+              const delta = totals[pl.userId] || 0;
+              pl.score = (pl.score || 0) + delta;
+              
+              // Convert points to chips and update table chips
+              const chipDelta = delta * 10;
+              const oldTableChips = pl.tableChips || 500;
+              pl.tableChips = oldTableChips + chipDelta;
+              
+              console.log(`🔍 CHIP SYSTEM: Player ${pl.name}: score delta ${delta}, chip delta ${chipDelta}, table chips ${oldTableChips} → ${pl.tableChips}`);
+            }
+            
+            // Check if match is over
+            const playersArr = [...room.players.values()];
+            const winner = playersArr.find(p => p.tableChips >= 1000);
+            const loser = playersArr.find(p => p.tableChips <= 0);
+            
+            console.log(`🔍 CHIP SYSTEM: Checking match end - winner: ${winner?.name} (${winner?.tableChips} chips), loser: ${loser?.name} (${loser?.tableChips} chips)`);
+            
+            if (winner && loser) {
+              console.log(`🔍 CHIP SYSTEM: Match ended! Winner: ${winner.name}, Loser: ${loser.name}`);
+              // Match is over - update persistent chip balances
+              const { updateUserChips } = await import("../store/database.js");
+              await updateUserChips(winner.dbId, 500); // Winner gets +500 chips
+              await updateUserChips(loser.dbId, -500);  // Loser loses -500 chips
+              
+              // Emit match end event
+              io.to(room.id).emit(Events.MATCH_END, {
+                winner: { userId: winner.userId, name: winner.name },
+                loser: { userId: loser.userId, name: loser.name },
+                finalChips: { winner: winner.tableChips, loser: loser.tableChips }
+              });
+              
+              // Clean up room
+              mem.rooms.delete(room.id);
+              return;
+            }
+          }
+        }
   }
   
   if (isMixedModeFinal && room.phase === "round") {
@@ -220,44 +301,8 @@ async function handleAllPlayersReady(room, io) {
           }
         }
 
-        // Update cumulative scores and convert to chips for ranked matches
-        if (room.isRanked) {
-          // For ranked matches, convert points to chips (1 point = 10 chips)
-          for (const pl of room.players.values()) {
-            const delta = totals[pl.userId] || 0;
-            pl.score = (pl.score || 0) + delta;
-            
-            // Convert points to chips and update table chips
-            const chipDelta = delta * 10;
-            pl.tableChips = (pl.tableChips || 500) + chipDelta;
-            
-            console.log(`Player ${pl.name}: score delta ${delta}, chip delta ${chipDelta}, table chips now ${pl.tableChips}`);
-          }
-          
-          // Check if match is over (one player has all 1000 chips)
-          const playersArr = [...room.players.values()];
-          const winner = playersArr.find(p => p.tableChips >= 1000);
-          const loser = playersArr.find(p => p.tableChips <= 0);
-          
-          if (winner && loser) {
-            // Match is over - update persistent chip balances
-            const { updateUserChips } = await import("../store/database.js");
-            await updateUserChips(winner.dbId, 500); // Winner gets +500 chips
-            await updateUserChips(loser.dbId, -500);  // Loser loses -500 chips
-            
-            // Emit match end event
-            io.to(roomId).emit(Events.MATCH_END, {
-              winner: { userId: winner.userId, name: winner.name },
-              loser: { userId: loser.userId, name: loser.name },
-              finalChips: { winner: winner.tableChips, loser: loser.tableChips }
-            });
-            
-            // Clean up room
-            mem.rooms.delete(roomId);
-            return;
-          }
-        } else {
-          // For non-ranked matches, just update scores normally
+        // For non-ranked matches, just update scores normally
+        if (!room.isRanked) {
           for (const pl of room.players.values()) {
             const delta = totals[pl.userId] || 0;
             pl.score = (pl.score || 0) + delta;
@@ -980,7 +1025,8 @@ export function emitRoomState(io, roomId) {
     score: p.score || 0,
     ready: p.ready,
     inFantasyland: p.inFantasyland,
-    roundComplete: p.roundComplete
+    roundComplete: p.roundComplete,
+    tableChips: p.tableChips || 0 // Add table chips for ranked matches
   }));
 
   io.to(roomId).emit(Events.ROOM_STATE, {
@@ -988,6 +1034,7 @@ export function emitRoomState(io, roomId) {
     phase: room.phase,
     round: room.round,
     currentRound: room.currentRound,
+    isRanked: room.isRanked || false, // Add ranked flag
     players: publicPlayers
   });
 }

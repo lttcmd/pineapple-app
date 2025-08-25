@@ -37,6 +37,8 @@ app.get("/monitor", (_req, res) => {
       phase: room.phase,
       round: room.round,
       roundIndex: room.roundIndex,
+      currentRound: room.currentRound,
+      isRanked: room.isRanked || false,
       timer: room.timer ? {
         isActive: room.timer.isActive,
         timeLeft: room.timer.timeLeft
@@ -54,7 +56,9 @@ app.get("/monitor", (_req, res) => {
       rooms[roomId].players[userId] = {
         name: player.name,
         score: player.score || 0,
+        tableChips: player.tableChips || 0,
         ready: player.ready,
+        roundComplete: player.roundComplete || false,
         inFantasyland: player.inFantasyland,
         hasPlayedFantasylandHand: player.hasPlayedFantasylandHand,
         handCardIndex: player.handCardIndex,
