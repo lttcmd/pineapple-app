@@ -8,6 +8,7 @@ import BackButton from "../components/BackButton";
 export default function Searching({ navigation }) {
   const [searching, setSearching] = useState(true);
   const [timeElapsed, setTimeElapsed] = useState(0);
+  const [matchedRoomId, setMatchedRoomId] = useState(null);
 
   useEffect(() => {
     let interval;
@@ -29,12 +30,15 @@ export default function Searching({ navigation }) {
       off = onSocketEvent((evt, data) => {
         if (evt === "ranked:match-found") {
           setSearching(false);
-          // Navigate to the room - it will auto-redirect to Play when game starts
-          navigation.replace("Room", { 
-            roomId: data.roomId
-          });
+          setMatchedRoomId(data.roomId);
+          // Don't navigate yet - wait for the game to start
         } else if (evt === "ranked:searching") {
           setSearching(data.searching);
+        } else if (evt === "round:start") {
+          // Game has started, navigate directly to Play
+          navigation.replace("Play", { 
+            roomId: matchedRoomId
+          });
         }
       });
     };
