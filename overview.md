@@ -54,7 +54,7 @@ ofc-pineapple-tourney/
 ## 💰 Chip System
 
 ### **Account Balance**
-- **Starting Balance**: 1,000 chips for new accounts
+- **Starting Balance**: 10,000 chips for new accounts
 - **Persistence**: Stored in SQLite database
 - **Transaction**: Updated after each ranked match
 
@@ -110,7 +110,7 @@ CREATE TABLE users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   phone TEXT UNIQUE NOT NULL,
   username TEXT UNIQUE NOT NULL,
-  chips INTEGER DEFAULT 1000,
+  chips INTEGER DEFAULT 10000,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```

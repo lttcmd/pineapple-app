@@ -39,7 +39,7 @@ export async function initDatabase() {
         phone TEXT UNIQUE NOT NULL,
         username TEXT UNIQUE,
         avatar TEXT,
-        chips INTEGER DEFAULT 1000,
+        chips INTEGER DEFAULT 10000,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -50,9 +50,18 @@ export async function initDatabase() {
       } else {
         console.log('Database initialized');
         // Add chips column to existing tables if it doesn't exist
-        db.run('ALTER TABLE users ADD COLUMN chips INTEGER DEFAULT 1000', (err) => {
+        db.run('ALTER TABLE users ADD COLUMN chips INTEGER DEFAULT 10000', (err) => {
           if (err && !err.message.includes('duplicate column name')) {
             console.error('Error adding chips column:', err);
+          }
+        });
+        
+        // Update all existing users to have 10,000 chips if they have less
+        db.run('UPDATE users SET chips = 10000 WHERE chips < 10000 OR chips IS NULL', (err) => {
+          if (err) {
+            console.error('Error updating existing users chips:', err);
+          } else {
+            console.log('Updated existing users to have 10,000 chips');
           }
         });
         resolve();

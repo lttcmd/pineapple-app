@@ -15,12 +15,13 @@ import { colors } from "../theme/colors";
  * - Calls onMove({x,y}) during drag for hover highlighting.
  * - Calls onDrop({ card, pageX, pageY }) on release for snapping.
  */
-export default function DraggableCard({ card, small = false, onMove, onDrop }) {
+export default function DraggableCard({ card, small = false, onMove, onDrop, responsive = null, showPlaceholder = false }) {
   const { begin, move, end } = useDrag();
   const [dragging, setDragging] = useState(false);
 
-  const PLACEHOLDER_W = small ? 62 : 64;
-  const PLACEHOLDER_H = small ? 92 : 88;
+  // Use responsive dimensions if provided, otherwise fall back to fixed sizes
+  const PLACEHOLDER_W = responsive ? responsive.SLOT_W : (small ? 62 : 64);
+  const PLACEHOLDER_H = responsive ? responsive.SLOT_H : (small ? 92 : 88);
 
   const pan = Gesture.Pan()
     .hitSlop({ horizontal: 8, vertical: 8 }) // easier to grab
@@ -54,8 +55,8 @@ export default function DraggableCard({ card, small = false, onMove, onDrop }) {
   return (
     <GestureDetector gesture={pan}>
       <Animated.View>
-        {/* While dragging, the element lives in the overlay; leave an outlined slot placeholder */}
-        {dragging ? (
+        {/* Show placeholder when dragging from board, transparent placeholder when dragging from hand */}
+        {dragging && showPlaceholder ? (
           <View style={{
             width: PLACEHOLDER_W,
             height: PLACEHOLDER_H,
@@ -64,9 +65,15 @@ export default function DraggableCard({ card, small = false, onMove, onDrop }) {
             borderRadius: 10,
             backgroundColor: "rgba(255,255,255,0.05)",
           }} />
-        ) : (
-          <Card card={card} small={small} noMargin />
-        )}
+        ) : dragging && !showPlaceholder ? (
+          <View style={{
+            width: PLACEHOLDER_W,
+            height: PLACEHOLDER_H,
+            backgroundColor: "transparent",
+          }} />
+        ) : !dragging ? (
+          <Card card={card} small={small} noMargin responsive={responsive} />
+        ) : null}
       </Animated.View>
     </GestureDetector>
   );

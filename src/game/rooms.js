@@ -469,6 +469,48 @@ async function handleAllPlayersReady(room, io) {
       pl.score = (pl.score || 0) + delta;
     }
 
+    // Process chip updates for ranked matches
+    if (room.isRanked) {
+      console.log(`🔍 CHIP SYSTEM: Processing ranked match chip updates at reveal start`);
+      
+      // Update chip stacks
+      for (const pl of room.players.values()) {
+        const delta = totals[pl.userId] || 0;
+        
+        // Convert points to chips and update table chips
+        const chipDelta = delta * 10;
+        const oldTableChips = pl.tableChips || 500;
+        pl.tableChips = oldTableChips + chipDelta;
+        
+        console.log(`🔍 CHIP SYSTEM: Player ${pl.name}: score delta ${delta}, chip delta ${chipDelta}, table chips ${oldTableChips} → ${pl.tableChips}`);
+      }
+      
+      // Check if match is over
+      const winner = playersArr.find(p => p.tableChips >= 1000);
+      const loser = playersArr.find(p => p.tableChips <= 0);
+      
+      console.log(`🔍 CHIP SYSTEM: Checking match end - winner: ${winner?.name} (${winner?.tableChips} chips), loser: ${loser?.name} (${loser?.tableChips} chips)`);
+      
+      if (winner && loser) {
+        console.log(`🔍 CHIP SYSTEM: Match ended! Winner: ${winner.name}, Loser: ${loser.name}`);
+        // Match is over - update persistent chip balances
+        const { updateUserChips } = await import("../store/database.js");
+        await updateUserChips(winner.dbId, 500); // Winner gets +500 chips
+        await updateUserChips(loser.dbId, -500);  // Loser loses -500 chips
+        
+        // Emit match end event
+        io.to(room.id).emit(Events.MATCH_END, {
+          winner: { userId: winner.userId, name: winner.name },
+          loser: { userId: loser.userId, name: loser.name },
+          finalChips: { winner: winner.tableChips, loser: loser.tableChips }
+        });
+        
+        // Clean up room
+        mem.rooms.delete(room.id);
+        return;
+      }
+    }
+
     const fantasylandData = boards.map(board => ({
       userId: board.userId,
       inFantasyland: board.inFantasyland,
@@ -493,6 +535,8 @@ async function handleAllPlayersReady(room, io) {
   const hasNormalPlayers = [...room.players.values()].some(player => !player.inFantasyland);
   const isMixedMode = hasFantasylandPlayers && hasNormalPlayers;
   
+  console.log(`🔍 HANDLE ALL READY: Mode detection - hasFantasylandPlayers: ${hasFantasylandPlayers}, hasNormalPlayers: ${hasNormalPlayers}, isMixedMode: ${isMixedMode}`);
+  
   if (isMixedMode) {
     console.log(`🔍 HANDLE ALL READY: Mixed mode detected`);
     
@@ -516,6 +560,157 @@ async function handleAllPlayersReady(room, io) {
       if (normalPlayerRound === 5 && fantasylandPlayer.ready) {
         console.log(`🔍 HANDLE ALL READY: Final sync point confirmed - proceeding to reveal`);
         // This is the final sync point - proceed to reveal
+        room.phase = "reveal";
+        room.handComplete = true;
+        
+        // Process chip updates for ranked matches immediately when reveal phase starts
+        if (room.isRanked) {
+          console.log(`🔍 CHIP SYSTEM: Processing ranked match chip updates at reveal start`);
+          // Calculate scores first
+          const boards = [];
+          const totals = {};
+          
+          for (const pl of room.players.values()) {
+            boards.push({
+              userId: pl.userId,
+              board: pl.board,
+              inFantasyland: pl.inFantasyland
+            });
+          }
+          
+          // Calculate pairwise scores
+          const pairwise = [];
+          for (let i = 0; i < boards.length; i++) {
+            for (let j = i + 1; j < boards.length; j++) {
+              const A = boards[i];
+              const B = boards[j];
+              const det = settlePairwiseDetailed(A.board, B.board);
+              pairwise.push({
+                aUserId: A.userId,
+                bUserId: B.userId,
+                a: det.a,
+                b: det.b
+              });
+
+              if (boards.length === 2) {
+                const grossA = Math.max(det.a.lines.top, 0) + Math.max(det.a.lines.middle, 0) + Math.max(det.a.lines.bottom, 0)
+                  + (det.a.scoop > 0 ? det.a.scoop : 0) + det.a.royalties;
+                const grossB = Math.max(det.b.lines.top, 0) + Math.max(det.b.lines.middle, 0) + Math.max(det.b.lines.bottom, 0)
+                  + (det.b.scoop > 0 ? det.b.scoop : 0) + det.b.royalties;
+                const diff = grossA - grossB;
+                totals[A.userId] = (totals[A.userId] || 0) + diff;
+                totals[B.userId] = (totals[B.userId] || 0) - diff;
+              }
+            }
+          }
+          
+          // Update chip stacks
+          for (const pl of room.players.values()) {
+            const delta = totals[pl.userId] || 0;
+            pl.score = (pl.score || 0) + delta;
+            
+            // Convert points to chips and update table chips
+            const chipDelta = delta * 10;
+            const oldTableChips = pl.tableChips || 500;
+            pl.tableChips = oldTableChips + chipDelta;
+            
+            console.log(`🔍 CHIP SYSTEM: Player ${pl.name}: score delta ${delta}, chip delta ${chipDelta}, table chips ${oldTableChips} → ${pl.tableChips}`);
+          }
+          
+          // Check if match is over
+          const playersArr = [...room.players.values()];
+          const winner = playersArr.find(p => p.tableChips >= 1000);
+          const loser = playersArr.find(p => p.tableChips <= 0);
+          
+          console.log(`🔍 CHIP SYSTEM: Checking match end - winner: ${winner?.name} (${winner?.tableChips} chips), loser: ${loser?.name} (${loser?.tableChips} chips)`);
+          
+          if (winner && loser) {
+            console.log(`🔍 CHIP SYSTEM: Match ended! Winner: ${winner.name}, Loser: ${loser.name}`);
+            // Match is over - update persistent chip balances
+            const { updateUserChips } = await import("../store/database.js");
+            await updateUserChips(winner.dbId, 500); // Winner gets +500 chips
+            await updateUserChips(loser.dbId, -500);  // Loser loses -500 chips
+            
+            // Emit match end event
+            io.to(room.id).emit(Events.MATCH_END, {
+              winner: { userId: winner.userId, name: winner.name },
+              loser: { userId: loser.userId, name: loser.name },
+              finalChips: { winner: winner.tableChips, loser: loser.tableChips }
+            });
+            
+            // Clean up room
+            mem.rooms.delete(room.id);
+            return;
+          }
+        }
+        
+        // Public boards summary (with foul reason if any)
+        const boards = playersArr.map(pl => {
+          const v = validateBoard(pl.board);
+          return {
+            userId: pl.userId,
+            name: pl.name,
+            board: pl.board,
+            valid: !v.fouled,
+            reason: v.fouled ? v.reason : null,
+            inFantasyland: pl.inFantasyland
+          };
+        });
+
+        // Pairwise detailed settle
+        const totals = {};
+        const pairwise = [];
+        for (let i = 0; i < playersArr.length; i++) {
+          for (let j = i + 1; j < playersArr.length; j++) {
+            const A = playersArr[i], B = playersArr[j];
+            const det = settlePairwiseDetailed(A.board, B.board);
+            pairwise.push({
+              aUserId: A.userId,
+              bUserId: B.userId,
+              a: det.a,
+              b: det.b
+            });
+
+            if (playersArr.length === 2) {
+              const grossA = Math.max(det.a.lines.top, 0) + Math.max(det.a.lines.middle, 0) + Math.max(det.a.lines.bottom, 0)
+                + (det.a.scoop > 0 ? det.a.scoop : 0) + det.a.royalties;
+              const grossB = Math.max(det.b.lines.top, 0) + Math.max(det.b.lines.middle, 0) + Math.max(det.b.lines.bottom, 0)
+                + (det.b.scoop > 0 ? det.b.scoop : 0) + det.b.royalties;
+              const diff = grossA - grossB;
+              totals[A.userId] = (totals[A.userId] || 0) + diff;
+              totals[B.userId] = (totals[B.userId] || 0) - diff;
+            } else {
+              totals[A.userId] = (totals[A.userId] || 0) + det.a.total;
+              totals[B.userId] = (totals[B.userId] || 0) + det.b.total;
+            }
+          }
+        }
+
+        // For non-ranked matches, just update scores normally
+        if (!room.isRanked) {
+          for (const pl of room.players.values()) {
+            const delta = totals[pl.userId] || 0;
+            pl.score = (pl.score || 0) + delta;
+          }
+        }
+
+        const fantasylandData = boards.map(board => ({
+          userId: board.userId,
+          inFantasyland: board.inFantasyland,
+          qualified: checkFantasylandEligibility(board.board, true)
+        }));
+        
+        console.log('Fantasyland data being sent:', fantasylandData);
+        
+        io.to(room.id).emit(Events.REVEAL, {
+          boards,
+          results: totals,
+          pairwise,
+          round: room.round,
+          fantasyland: fantasylandData
+        });
+        
+        return;
       } else {
         console.log(`🔍 HANDLE ALL READY: Not final sync point - normal round ${normalPlayerRound}, fantasyland ready: ${fantasylandPlayer.ready}`);
         
@@ -598,107 +793,210 @@ async function handleAllPlayersReady(room, io) {
     
     if (anyPlayerAdvanced) {
       // Some players got new cards, continue the round
+      console.log(`🔍 HANDLE ALL READY: Normal mode - players advanced, continuing round`);
       emitRoomState(io, room.id);
       return;
-    }
-  }
-  
-  // If no one advanced, check if hand is complete
-
-  if (checkHandComplete(room)) {
-    
-    room.phase = "reveal";
-    room.handComplete = true;
-    
-    // Check for fantasyland eligibility and continuation
-    for (const player of playersArr) {
-      // Check if player should enter fantasyland (if not already in it)
-      if (!player.inFantasyland && checkFantasylandEligibility(player.board, true)) {
-        console.log(`Player ${player.userId} qualifies for fantasyland!`);
-        player.inFantasyland = true;
-        player.hasPlayedFantasylandHand = false; // Will be set to true when they play their first fantasyland hand
+    } else {
+      // No one advanced - check if hand is complete
+      console.log(`🔍 HANDLE ALL READY: Normal mode - no advancement, checking if hand complete`);
+      
+      // Debug logging for hand completion check
+      const normalPlayers = [...room.players.values()].filter(p => !p.inFantasyland);
+      const fantasylandPlayers = [...room.players.values()].filter(p => p.inFantasyland);
+      
+      console.log(`🔍 HANDLE ALL READY: Debug - Normal players: ${normalPlayers.length}, Fantasyland players: ${fantasylandPlayers.length}`);
+      
+      for (const player of normalPlayers) {
+        console.log(`🔍 HANDLE ALL READY: Debug - Player ${player.name}: handCardIndex=${player.handCardIndex}, ready=${player.ready}, hand.length=${player.hand.length}`);
       }
       
-      // Check for fantasyland continuation (only if player has played a fantasyland hand)
-      if (player.inFantasyland && player.hasPlayedFantasylandHand && checkFantasylandContinuation(player.board)) {
-        console.log(`Player ${player.userId} continues in fantasyland!`);
-        // Player stays in fantasyland for next round
-        player.hasPlayedFantasylandHand = false; // Reset for next fantasyland hand
-      } else if (player.inFantasyland && player.hasPlayedFantasylandHand) {
-        console.log(`Player ${player.userId} exits fantasyland`);
-        player.inFantasyland = false;
-        player.hasPlayedFantasylandHand = false;
+      for (const player of fantasylandPlayers) {
+        console.log(`🔍 HANDLE ALL READY: Debug - Fantasyland player ${player.name}: hasPlayedFantasylandHand=${player.hasPlayedFantasylandHand}, ready=${player.ready}`);
       }
-    }
+      
+      const handComplete = checkHandComplete(room);
+      console.log(`🔍 HANDLE ALL READY: Debug - checkHandComplete returned: ${handComplete}`);
+      
+      if (handComplete) {
+        console.log(`🔍 HANDLE ALL READY: Normal mode hand complete - proceeding to reveal`);
+        room.phase = "reveal";
+        room.handComplete = true;
+        
+        // Process chip updates for ranked matches immediately when reveal phase starts
+        if (room.isRanked) {
+          console.log(`🔍 CHIP SYSTEM: Processing ranked match chip updates at reveal start`);
+          // Calculate scores first
+          const boards = [];
+          const totals = {};
+          
+          for (const pl of room.players.values()) {
+            boards.push({
+              userId: pl.userId,
+              board: pl.board,
+              inFantasyland: pl.inFantasyland
+            });
+          }
+          
+          // Calculate pairwise scores
+          const pairwise = [];
+          for (let i = 0; i < boards.length; i++) {
+            for (let j = i + 1; j < boards.length; j++) {
+              const A = boards[i];
+              const B = boards[j];
+              const det = settlePairwiseDetailed(A.board, B.board);
+              pairwise.push({
+                aUserId: A.userId,
+                bUserId: B.userId,
+                a: det.a,
+                b: det.b
+              });
 
-    // Public boards summary (with foul reason if any)
-    const boards = playersArr.map(pl => {
-      const v = validateBoard(pl.board);
-      return {
-        userId: pl.userId,
-        name: pl.name,
-        board: pl.board,
-        valid: !v.fouled,
-        reason: v.fouled ? v.reason : null,
-        inFantasyland: pl.inFantasyland
-      };
-    });
-
-    // Pairwise detailed settle
-    const totals = {};
-    const pairwise = [];
-    for (let i = 0; i < playersArr.length; i++) {
-      for (let j = i + 1; j < playersArr.length; j++) {
-        const A = playersArr[i], B = playersArr[j];
-        const det = settlePairwiseDetailed(A.board, B.board);
-        pairwise.push({
-          aUserId: A.userId,
-          bUserId: B.userId,
-          a: det.a,
-          b: det.b
+              if (boards.length === 2) {
+                const grossA = Math.max(det.a.lines.top, 0) + Math.max(det.a.lines.middle, 0) + Math.max(det.a.lines.bottom, 0)
+                  + (det.a.scoop > 0 ? det.a.scoop : 0) + det.a.royalties;
+                const grossB = Math.max(det.b.lines.top, 0) + Math.max(det.b.lines.middle, 0) + Math.max(det.b.lines.bottom, 0)
+                  + (det.b.scoop > 0 ? det.b.scoop : 0) + det.b.royalties;
+                const diff = grossA - grossB;
+                totals[A.userId] = (totals[A.userId] || 0) + diff;
+                totals[B.userId] = (totals[B.userId] || 0) - diff;
+              }
+            }
+          }
+          
+          // Update chip stacks
+          for (const pl of room.players.values()) {
+            const delta = totals[pl.userId] || 0;
+            pl.score = (pl.score || 0) + delta;
+            
+            // Convert points to chips and update table chips
+            const chipDelta = delta * 10;
+            const oldTableChips = pl.tableChips || 500;
+            pl.tableChips = oldTableChips + chipDelta;
+            
+            console.log(`🔍 CHIP SYSTEM: Player ${pl.name}: score delta ${delta}, chip delta ${chipDelta}, table chips ${oldTableChips} → ${pl.tableChips}`);
+          }
+          
+          // Check if match is over
+          const playersArr = [...room.players.values()];
+          const winner = playersArr.find(p => p.tableChips >= 1000);
+          const loser = playersArr.find(p => p.tableChips <= 0);
+          
+          console.log(`🔍 CHIP SYSTEM: Checking match end - winner: ${winner?.name} (${winner?.tableChips} chips), loser: ${loser?.name} (${loser?.tableChips} chips)`);
+          
+          if (winner && loser) {
+            console.log(`🔍 CHIP SYSTEM: Match ended! Winner: ${winner.name}, Loser: ${loser.name}`);
+            // Match is over - update persistent chip balances
+            const { updateUserChips } = await import("../store/database.js");
+            await updateUserChips(winner.dbId, 500); // Winner gets +500 chips
+            await updateUserChips(loser.dbId, -500);  // Loser loses -500 chips
+            
+            // Emit match end event
+            io.to(room.id).emit(Events.MATCH_END, {
+              winner: { userId: winner.userId, name: winner.name },
+              loser: { userId: loser.userId, name: loser.name },
+              finalChips: { winner: winner.tableChips, loser: loser.tableChips }
+            });
+            
+            // Clean up room
+            mem.rooms.delete(room.id);
+            return;
+          }
+        }
+        
+        // Public boards summary (with foul reason if any)
+        const boards = playersArr.map(pl => {
+          const v = validateBoard(pl.board);
+          return {
+            userId: pl.userId,
+            name: pl.name,
+            board: pl.board,
+            valid: !v.fouled,
+            reason: v.fouled ? v.reason : null,
+            inFantasyland: pl.inFantasyland
+          };
         });
 
-        if (playersArr.length === 2) {
-          // Difference-based scoring: compute gross points for each, then use the difference
-          const grossA = Math.max(det.a.lines.top, 0) + Math.max(det.a.lines.middle, 0) + Math.max(det.a.lines.bottom, 0)
-            + (det.a.scoop > 0 ? det.a.scoop : 0) + det.a.royalties;
-          const grossB = Math.max(det.b.lines.top, 0) + Math.max(det.b.lines.middle, 0) + Math.max(det.b.lines.bottom, 0)
-            + (det.b.scoop > 0 ? det.b.scoop : 0) + det.b.royalties;
-          const diff = grossA - grossB;
-          totals[A.userId] = (totals[A.userId] || 0) + diff;
-          totals[B.userId] = (totals[B.userId] || 0) - diff;
-        } else {
-          // Multi-player: sum zero-sum pairwise totals
-          totals[A.userId] = (totals[A.userId] || 0) + det.a.total;
-          totals[B.userId] = (totals[B.userId] || 0) + det.b.total;
+        // Pairwise detailed settle
+        const totals = {};
+        const pairwise = [];
+        for (let i = 0; i < playersArr.length; i++) {
+          for (let j = i + 1; j < playersArr.length; j++) {
+            const A = playersArr[i], B = playersArr[j];
+            const det = settlePairwiseDetailed(A.board, B.board);
+            pairwise.push({
+              aUserId: A.userId,
+              bUserId: B.userId,
+              a: det.a,
+              b: det.b
+            });
+
+            if (playersArr.length === 2) {
+              const grossA = Math.max(det.a.lines.top, 0) + Math.max(det.a.lines.middle, 0) + Math.max(det.a.lines.bottom, 0)
+                + (det.a.scoop > 0 ? det.a.scoop : 0) + det.a.royalties;
+              const grossB = Math.max(det.b.lines.top, 0) + Math.max(det.b.lines.middle, 0) + Math.max(det.b.lines.bottom, 0)
+                + (det.b.scoop > 0 ? det.b.scoop : 0) + det.b.royalties;
+              const diff = grossA - grossB;
+              totals[A.userId] = (totals[A.userId] || 0) + diff;
+              totals[B.userId] = (totals[B.userId] || 0) - diff;
+            } else {
+              totals[A.userId] = (totals[A.userId] || 0) + det.a.total;
+              totals[B.userId] = (totals[B.userId] || 0) + det.b.total;
+            }
+          }
         }
+
+        // For non-ranked matches, just update scores normally
+        if (!room.isRanked) {
+          for (const pl of room.players.values()) {
+            const delta = totals[pl.userId] || 0;
+            pl.score = (pl.score || 0) + delta;
+          }
+        }
+
+        // Check for fantasyland eligibility and continuation
+        for (const player of playersArr) {
+          // Check if player should enter fantasyland (if not already in it)
+          if (!player.inFantasyland && checkFantasylandEligibility(player.board, true)) {
+            console.log(`Player ${player.userId} qualifies for fantasyland!`);
+            player.inFantasyland = true;
+            player.hasPlayedFantasylandHand = false; // Will be set to true when they play their first fantasyland hand
+          }
+          
+          // Check for fantasyland continuation (only if player has played a fantasyland hand)
+          if (player.inFantasyland && player.hasPlayedFantasylandHand && checkFantasylandContinuation(player.board)) {
+            console.log(`Player ${player.userId} continues in fantasyland!`);
+            // Player stays in fantasyland for next round
+            player.hasPlayedFantasylandHand = false; // Reset for next fantasyland hand
+          } else if (player.inFantasyland && player.hasPlayedFantasylandHand) {
+            console.log(`Player ${player.userId} exits fantasyland`);
+            player.inFantasyland = false;
+            player.hasPlayedFantasylandHand = false;
+          }
+        }
+
+        const fantasylandData = boards.map(board => ({
+          userId: board.userId,
+          inFantasyland: board.inFantasyland,
+          qualified: checkFantasylandEligibility(board.board, true)
+        }));
+        
+        console.log('Fantasyland data being sent:', fantasylandData);
+        
+        io.to(room.id).emit(Events.REVEAL, {
+          boards,
+          results: totals,
+          pairwise,
+          round: room.round,
+          fantasyland: fantasylandData
+        });
+        
+        return;
+      } else {
+        console.log(`🔍 HANDLE ALL READY: Normal mode - hand not complete, continuing`);
+        emitRoomState(io, room.id);
+        return;
       }
     }
-
-    // Update cumulative scores
-    for (const pl of room.players.values()) {
-      const delta = totals[pl.userId] || 0;
-      pl.score = (pl.score || 0) + delta;
-    }
-
-    const fantasylandData = boards.map(board => ({
-      userId: board.userId,
-      inFantasyland: board.inFantasyland,
-      qualified: board.inFantasyland || checkFantasylandEligibility(board.board, true)
-    }));
-    
-    console.log('Fantasyland data being sent:', fantasylandData);
-    
-    io.to(room.id).emit(Events.REVEAL, {
-      boards,
-      results: totals,      // per-hand delta
-      pairwise,             // detailed per-pair breakdown
-      round: room.round,
-      fantasyland: fantasylandData
-    });
-  } else {
-    // Hand not complete, just emit state
-    emitRoomState(io, room.id);
   }
 }
 

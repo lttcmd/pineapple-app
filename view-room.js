@@ -76,7 +76,7 @@ async function viewRoom() {
       changes.forEach(change => console.log(`   ${change}`));
     }
     console.log(`📊 Phase: ${room.phase}`);
-    console.log(`🔄 Round: ${room.round}`);
+    console.log(`🔄 Hand #: ${room.round}`);
     console.log(`📈 Round Index: ${room.roundIndex}`);
     console.log(`🎯 Current Round: ${room.currentRound || 'N/A'}`);
     console.log(`🏆 Ranked Match: ${room.isRanked ? 'YES' : 'NO'}`);

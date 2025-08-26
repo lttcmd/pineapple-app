@@ -109,6 +109,13 @@
 
     <div>
       <fieldset style="border:1px solid #2a3244; border-radius:10px; padding:10px;">
+        <legend>Players</legend>
+        <div id="playerInfo" class="small">
+          <div>Loading player info...</div>
+        </div>
+      </fieldset>
+
+      <fieldset style="border:1px solid #2a3244; border-radius:10px; padding:10px;">
         <legend>Reveal & Scores</legend>
         <div class="small">Current totals (client-side):</div>
         <table id="scoreboard">
@@ -145,6 +152,8 @@
     let lastBatch = [];
     const totals = new Map();
     const nextRoundReady = new Set(); // Set of userIds ready for next round
+    let roomState = null; // Store full room state for player info
+    let isRanked = false; // Track if this is a ranked match
     
     // --- rendering helpers
     function suitClass(s){ return s==='h'?'hearts':s==='d'?'diamonds':s==='c'?'clubs':'spades'; }
@@ -152,14 +161,19 @@
     
 
 
-    function cardEl(code, isNew=false){
+    function cardEl(code, isNew=false, source=null){
       const rank = code.slice(0,-1), suit = code.slice(-1);
       const el = document.createElement('div');
       el.className = `card ${suitClass(suit)} ${isNew?'newcard':''}`;
       el.textContent = `${rank}${suitSymbol(suit)}`;
       el.draggable = true;
+      el.dataset.card = code;
+      if (source) {
+        el.dataset.source = source; // 'hand', 'board-top', 'board-middle', 'board-bottom', 'staged'
+      }
       el.addEventListener('dragstart', (e)=> {
         e.dataTransfer.setData('text/plain', code);
+        e.dataTransfer.setData('source', source || 'hand');
         e.dataTransfer.dropEffect = 'move';
       });
       return el;
@@ -167,21 +181,21 @@
 
     function renderHand() {
       const wrap = $('hand'); wrap.innerHTML = '';
-      myHand.forEach(c => wrap.appendChild(cardEl(c, lastBatch.includes(c))));
+      myHand.forEach(c => wrap.appendChild(cardEl(c, lastBatch.includes(c), 'hand')));
     }
     function renderRow(zoneId, committedCards, stagedCards) {
       const zone = $(zoneId), cWrap = zone.querySelector('.committed'), sWrap = zone.querySelector('.staged');
       cWrap.innerHTML = ''; sWrap.innerHTML = '';
-      committedCards.forEach(c => cWrap.appendChild(cardEl(c)));
-      stagedCards.forEach(c => sWrap.appendChild(cardEl(c)));
+      committedCards.forEach(c => cWrap.appendChild(cardEl(c, false, `board-${zone.dataset.row}`)));
+      stagedCards.forEach(c => sWrap.appendChild(cardEl(c, false, 'staged')));
     }
     function getStagedByRow(row){ return staged.placements.filter(x=>x.row===row).map(x=>x.card); }
     function refreshBoard(){
       renderRow('zoneTop', myBoard.top, getStagedByRow('top'));
       renderRow('zoneMiddle', myBoard.middle, getStagedByRow('middle'));
       renderRow('zoneBottom', myBoard.bottom, getStagedByRow('bottom'));
-      const dc = $('discardCommitted'); dc.innerHTML=''; myDiscards.forEach(c => dc.appendChild(cardEl(c)));
-      const ds = $('discardStaged'); ds.innerHTML=''; if (staged.discard) ds.appendChild(cardEl(staged.discard));
+      const dc = $('discardCommitted'); dc.innerHTML=''; myDiscards.forEach(c => dc.appendChild(cardEl(c, false, 'discard')));
+      const ds = $('discardStaged'); ds.innerHTML=''; if (staged.discard) ds.appendChild(cardEl(staged.discard, false, 'staged-discard'));
       $('ready').disabled = !canSet();
     }
 
@@ -193,9 +207,65 @@
       zone.addEventListener('drop', (e)=>{
         e.preventDefault(); zone.classList.remove('dragover');
         const code = e.dataTransfer.getData('text/plain');
+        const source = e.dataTransfer.getData('source');
         if (!code) return;
 
         const isDiscard = zone.dataset.discard === 'true';
+        
+        // Handle re-dragging from board positions
+        if (source && source.startsWith('board-')) {
+          const sourceRow = source.replace('board-', '');
+          
+          // Remove from source position
+          if (sourceRow === zone.dataset.row) {
+            // Same row - just move within the row (no action needed for staged cards)
+            return;
+          }
+          
+          // Remove from committed board
+          if (myBoard[sourceRow].includes(code)) {
+            myBoard[sourceRow] = myBoard[sourceRow].filter(c => c !== code);
+          }
+          
+          // Remove from staged placements
+          staged.placements = staged.placements.filter(p => !(p.row === sourceRow && p.card === code));
+          
+          // Add to hand for re-placement
+          if (!myHand.includes(code)) {
+            myHand.push(code);
+          }
+          
+          renderHand(); refreshBoard(); return;
+        }
+        
+        // Handle re-dragging from staged cards
+        if (source === 'staged') {
+          // Remove from staged placements
+          staged.placements = staged.placements.filter(p => p.card !== code);
+          
+          // Add to hand for re-placement
+          if (!myHand.includes(code)) {
+            myHand.push(code);
+          }
+          
+          renderHand(); refreshBoard(); return;
+        }
+        
+        // Handle re-dragging from discard zones
+        if (source === 'discard' || source === 'staged-discard') {
+          // Remove from staged discard
+          if (staged.discard === code) {
+            staged.discard = null;
+          }
+          
+          // Add to hand for re-placement
+          if (!myHand.includes(code)) {
+            myHand.push(code);
+          }
+          
+          renderHand(); refreshBoard(); return;
+        }
+
         if (currentPhase === 'round' && !lastBatch.includes(code)) {
           alert('This step: only the new cards can be used.'); return;
         }
@@ -319,6 +389,41 @@
 };
 
     // scoreboard / reveal
+    function renderPlayerInfo() {
+      if (!roomState || !roomState.players) return;
+      
+      const playerInfo = $('playerInfo');
+      playerInfo.innerHTML = '';
+      
+      Object.values(roomState.players).forEach(player => {
+        const playerDiv = document.createElement('div');
+        playerDiv.style.marginBottom = '8px';
+        playerDiv.style.padding = '6px';
+        playerDiv.style.border = '1px solid #2a3244';
+        playerDiv.style.borderRadius = '6px';
+        playerDiv.style.backgroundColor = player.userId === myUserId ? '#1b2030' : '#0b0e17';
+        
+        const nameSpan = document.createElement('div');
+        nameSpan.style.fontWeight = 'bold';
+        nameSpan.style.color = '#e7e8ea';
+        nameSpan.textContent = player.name || player.userId;
+        
+        const infoSpan = document.createElement('div');
+        infoSpan.style.color = '#9aa3b2';
+        infoSpan.style.fontSize = '12px';
+        
+        if (isRanked && player.tableChips !== undefined) {
+          infoSpan.textContent = `${player.tableChips} chips`;
+        } else {
+          infoSpan.textContent = `Score: ${player.score || 0}`;
+        }
+        
+        playerDiv.appendChild(nameSpan);
+        playerDiv.appendChild(infoSpan);
+        playerInfo.appendChild(playerDiv);
+      });
+    }
+    
     function renderScoreboard(names) {
       const tbody = $('scoreboard').querySelector('tbody'); tbody.innerHTML='';
       [...totals.entries()].sort((a,b)=>b[1]-a[1]).forEach(([uid,score])=>{
@@ -357,20 +462,66 @@
         const mine = p.aUserId===meId ? p.a : p.b;
         const opp  = p.aUserId===meId ? p.b : p.a;
         const oppId= p.aUserId===meId ? p.bUserId : p.aUserId;
+        
+        // Calculate line scores with royalties
+        const getLineScore = (d, line) => {
+          const lineScore = d.lines[line] || 0;
+          const royaltyScore = d.royaltiesBreakdown?.[line] || 0;
+          return lineScore + royaltyScore;
+        };
+        
+        const mineTop = getLineScore(mine, 'top');
+        const mineMiddle = getLineScore(mine, 'middle');
+        const mineBottom = getLineScore(mine, 'bottom');
+        const mineTotal = mineTop + mineMiddle + mineBottom;
+        
+        const oppTop = getLineScore(opp, 'top');
+        const oppMiddle = getLineScore(opp, 'middle');
+        const oppBottom = getLineScore(opp, 'bottom');
+        const oppTotal = oppTop + oppMiddle + oppBottom;
+        
+        // Calculate difference and chip conversion
+        const difference = mineTotal - oppTotal;
+        const chipDifference = difference * 10;
+        
         const sec=document.createElement('div');
         sec.innerHTML = `
-          <div style="margin-top:6px;margin-bottom:4px;"><strong>Vs ${names.get(oppId) || oppId.slice(0,8)}</strong></div>
-          <table>
-            <thead><tr><th>Line</th><th>Points</th></tr></thead>
-            <tbody>
-              <tr><td>Top</td><td>${mine.lines.top>0?'+':''}${mine.lines.top}</td></tr>
-              <tr><td>Middle</td><td>${mine.lines.middle>0?'+':''}${mine.lines.middle}</td></tr>
-              <tr><td>Bottom</td><td>${mine.lines.bottom>0?'+':''}${mine.lines.bottom}</td></tr>
-              <tr><td>Scoop</td><td>${mine.scoop>0?'+':''}${mine.scoop}</td></tr>
-              <tr><td>Royalties</td><td>${mine.royalties>0?'+':''}${mine.royalties}</td></tr>
-              <tr><td><strong>Total</strong></td><td><strong>${mine.total>0?'+':''}${mine.total}</strong></td></tr>
-            </tbody>
-          </table>`;
+          <div style="margin-top:10px;margin-bottom:8px;padding:8px;background:#1b2030;border-radius:8px;border:1px solid #2a3244;">
+            <div style="margin-bottom:8px;"><strong>Vs ${names.get(oppId) || oppId.slice(0,8)}</strong></div>
+            
+            <!-- Line Scores -->
+            <div style="margin-bottom:12px;">
+              <div style="font-weight:600;margin-bottom:6px;color:#9aa3b2;">Line Scores:</div>
+              <table style="width:100%;font-size:14px;">
+                <thead><tr><th style="text-align:left;">Line</th><th style="text-align:right;">You</th><th style="text-align:right;">Opponent</th></tr></thead>
+                <tbody>
+                  <tr><td>Top</td><td style="text-align:right;">${mineTop>=0?'+':''}${mineTop}</td><td style="text-align:right;">${oppTop>=0?'+':''}${oppTop}</td></tr>
+                  <tr><td>Middle</td><td style="text-align:right;">${mineMiddle>=0?'+':''}${mineMiddle}</td><td style="text-align:right;">${oppMiddle>=0?'+':''}${oppMiddle}</td></tr>
+                  <tr><td>Bottom</td><td style="text-align:right;">${mineBottom>=0?'+':''}${mineBottom}</td><td style="text-align:right;">${oppBottom>=0?'+':''}${oppBottom}</td></tr>
+                  <tr style="border-top:1px solid #2a3244;font-weight:600;">
+                    <td>Total</td><td style="text-align:right;">${mineTotal>=0?'+':''}${mineTotal}</td><td style="text-align:right;">${oppTotal>=0?'+':''}${oppTotal}</td></tr>
+                </tbody>
+              </table>
+            </div>
+            
+            <!-- Difference -->
+            <div style="margin-bottom:8px;padding-top:8px;border-top:1px solid #2a3244;">
+              <div style="font-weight:600;margin-bottom:4px;color:#9aa3b2;">Difference:</div>
+              <div style="font-size:16px;font-weight:700;text-align:center;color:${difference>=0?'#7ee787':'#ff6b6b'}">
+                ${difference>=0?'+':''}${difference} points
+              </div>
+            </div>
+            
+            ${isRanked ? `
+            <!-- Chip Conversion for Ranked Matches -->
+            <div style="padding-top:8px;border-top:1px solid #2a3244;">
+              <div style="font-weight:600;margin-bottom:4px;color:#9aa3b2;">Chip Conversion (1 point = 10 chips):</div>
+              <div style="font-size:16px;font-weight:700;text-align:center;color:${chipDifference>=0?'#7ee787':'#ff6b6b'}">
+                ${chipDifference>=0?'+':''}${chipDifference} chips
+              </div>
+            </div>
+            ` : ''}
+          </div>`;
         panel.appendChild(sec);
       });
     }
@@ -387,7 +538,7 @@
       
       // Check if this is a ranked match (from URL parameter)
       const urlParams = new URLSearchParams(window.location.search);
-      const isRanked = urlParams.get('ranked') === 'true';
+      isRanked = urlParams.get('ranked') === 'true';
       
       if (!isRanked) {
         // Only join room if it's not a ranked match (ranked matches auto-join)
@@ -403,8 +554,11 @@
 
     socket.on("room:state", (s)=>{ 
       console.log("🎯 WEB APP: Received room:state event:", s);
+      roomState = s; // Store full room state
+      isRanked = s.isRanked || false; // Track if this is a ranked match
       setPhase(s.phase); 
       setCurrentRound(s.currentRound);
+      renderPlayerInfo(); // Update player info display
       log("STATE\n"+JSON.stringify(s,null,2)); 
       updateStartButton();
     });

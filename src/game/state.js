@@ -186,6 +186,8 @@ export function checkHandComplete(room) {
   const normalPlayers = [...room.players.values()].filter(p => !p.inFantasyland);
   const fantasylandPlayers = [...room.players.values()].filter(p => p.inFantasyland);
   
+  console.log(`🔍 CHECK HAND COMPLETE: Normal players: ${normalPlayers.length}, Fantasyland players: ${fantasylandPlayers.length}`);
+  
   // Check if all normal players have completed 5 rounds (17 cards)
   const normalComplete = normalPlayers.every(p => p.handCardIndex >= 17);
   
@@ -196,6 +198,16 @@ export function checkHandComplete(room) {
   // 1. All normal players have completed their 5 rounds, AND
   // 2. All fantasyland players have played their hand (if any exist)
   const handComplete = normalComplete && (fantasylandPlayers.length === 0 || fantasylandComplete);
+  
+  console.log(`🔍 CHECK HAND COMPLETE: normalComplete=${normalComplete}, fantasylandComplete=${fantasylandComplete}, handComplete=${handComplete}`);
+  
+  for (const player of normalPlayers) {
+    console.log(`🔍 CHECK HAND COMPLETE: Normal player ${player.name}: handCardIndex=${player.handCardIndex} >= 17 = ${player.handCardIndex >= 17}`);
+  }
+  
+  for (const player of fantasylandPlayers) {
+    console.log(`🔍 CHECK HAND COMPLETE: Fantasyland player ${player.name}: hasPlayedFantasylandHand=${player.hasPlayedFantasylandHand}`);
+  }
   
   return handComplete;
 }
