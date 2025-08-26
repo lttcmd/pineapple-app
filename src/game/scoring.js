@@ -287,8 +287,14 @@ export function settlePairwiseDetailed(aBoard, bBoard) {
     detail.b.royalties = bRoy;
     detail.b.royaltiesBreakdown = { top: bRoyTop, middle: bRoyMid, bottom: bRoyBot };
     detail.b.scoop = +scoopBonus; // award scoop for non-fouler
+    
+    // Non-fouler wins all rows (+1 each) plus gets royalties
+    detail.b.lines.top = +rowWin;
+    detail.b.lines.middle = +rowWin;
+    detail.b.lines.bottom = +rowWin;
+    
     detail.a.total = -(foulPenalty + scoopBonus) + 0;      // A pays penalty + scoop
-    detail.b.total = +(foulPenalty + scoopBonus) + bRoy;   // B gets penalty + scoop + royalties
+    detail.b.total = +(foulPenalty + scoopBonus) + bRoy + (rowWin * 3); // B gets penalty + scoop + royalties + 3 row wins
     return detail;
   }
   if (!av.fouled && bv.fouled) {
@@ -299,7 +305,13 @@ export function settlePairwiseDetailed(aBoard, bBoard) {
     detail.a.royalties = aRoy;
     detail.a.royaltiesBreakdown = { top: aRoyTop, middle: aRoyMid, bottom: aRoyBot };
     detail.a.scoop = +scoopBonus; // award scoop for non-fouler
-    detail.a.total = +(foulPenalty + scoopBonus) + aRoy;
+    
+    // Non-fouler wins all rows (+1 each) plus gets royalties
+    detail.a.lines.top = +rowWin;
+    detail.a.lines.middle = +rowWin;
+    detail.a.lines.bottom = +rowWin;
+    
+    detail.a.total = +(foulPenalty + scoopBonus) + aRoy + (rowWin * 3); // penalty + scoop + royalties + 3 row wins
     detail.b.total = -(foulPenalty + scoopBonus) + 0;
     return detail;
   }
@@ -309,14 +321,14 @@ export function settlePairwiseDetailed(aBoard, bBoard) {
   const mCmp = compare5   (rank5   (aBoard.middle), rank5   (bBoard.middle));
   const bCmp = compare5   (rank5   (aBoard.bottom), rank5   (bBoard.bottom));
 
-  if (tCmp > 0) { detail.a.lines.top    = +rowWin; detail.b.lines.top    = -rowWin; }
-  else if (tCmp < 0) { detail.a.lines.top    = -rowWin; detail.b.lines.top    = +rowWin; }
+  if (tCmp > 0) { detail.a.lines.top    = +rowWin; detail.b.lines.top    = 0; }
+  else if (tCmp < 0) { detail.a.lines.top    = 0; detail.b.lines.top    = +rowWin; }
 
-  if (mCmp > 0) { detail.a.lines.middle = +rowWin; detail.b.lines.middle = -rowWin; }
-  else if (mCmp < 0) { detail.a.lines.middle = -rowWin; detail.b.lines.middle = +rowWin; }
+  if (mCmp > 0) { detail.a.lines.middle = +rowWin; detail.b.lines.middle = 0; }
+  else if (mCmp < 0) { detail.a.lines.middle = 0; detail.b.lines.middle = +rowWin; }
 
-  if (bCmp > 0) { detail.a.lines.bottom = +rowWin; detail.b.lines.bottom = -rowWin; }
-  else if (bCmp < 0) { detail.a.lines.bottom = -rowWin; detail.b.lines.bottom = +rowWin; }
+  if (bCmp > 0) { detail.a.lines.bottom = +rowWin; detail.b.lines.bottom = 0; }
+  else if (bCmp < 0) { detail.a.lines.bottom = 0; detail.b.lines.bottom = +rowWin; }
 
   // Scoop bonus
   const winsA = [tCmp, mCmp, bCmp].every(x => x > 0);
@@ -340,8 +352,8 @@ export function settlePairwiseDetailed(aBoard, bBoard) {
   const sumLinesA = detail.a.lines.top + detail.a.lines.middle + detail.a.lines.bottom;
   const sumLinesB = detail.b.lines.top + detail.b.lines.middle + detail.b.lines.bottom;
 
-  detail.a.total = sumLinesA + detail.a.scoop + (detail.a.royalties - detail.b.royalties);
-  detail.b.total = sumLinesB + detail.b.scoop + (detail.b.royalties - detail.a.royalties);
+  detail.a.total = sumLinesA + detail.a.scoop + detail.a.royalties;
+  detail.b.total = sumLinesB + detail.b.scoop + detail.b.royalties;
 
   return detail;
 }

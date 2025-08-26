@@ -24,7 +24,7 @@ const getResponsiveDimensions = () => {
   const isLargeDevice = screenWidth >= 414; // iPhone 12/13/14 Pro Max, large Android
   
   // Calculate card sizes based on screen size - opponent board smaller, player board larger
-  const opponentCardWidthPercent = 0.09; // 9% of screen width for opponent board (smaller, just for viewing)
+  const opponentCardWidthPercent = 0.11; // 11% of screen width for opponent board (smaller, just for viewing)
   const playerCardWidthPercent = 0.1425; // 14.25% of screen width for player board (larger, for interaction)
   
   const opponentBaseSlotW = Math.min(Math.max(screenWidth * opponentCardWidthPercent, 30), 60);
@@ -42,6 +42,11 @@ const getResponsiveDimensions = () => {
   const gapPercent = 0.01; // 1% of screen width
   const SLOT_GAP = Math.min(Math.max(screenWidth * gapPercent, 1), 3); // Min 1px, Max 3px
   const ROW_GAP = Math.min(Math.max(screenWidth * gapPercent, 1), 3); // Min 1px, Max 3px
+  
+  // Smaller gaps for opponent board (more compact)
+  const opponentGapPercent = 0.005; // 0.5% of screen width (half the normal gap)
+  const OPPONENT_SLOT_GAP = Math.min(Math.max(screenWidth * opponentGapPercent, 1), 2); // Min 1px, Max 2px
+  const OPPONENT_ROW_GAP = Math.min(Math.max(screenWidth * opponentGapPercent, 1), 2); // Min 1px, Max 2px
   
   // Tighter gaps for hand cards (especially fantasyland with 7 cards)
   const handGapPercent = 0.0001; // 0.01% of screen width (tiny gap)
@@ -94,6 +99,8 @@ const getResponsiveDimensions = () => {
     OPPONENT_SLOT_H,
     SLOT_GAP,
     ROW_GAP,
+    OPPONENT_SLOT_GAP,
+    OPPONENT_ROW_GAP,
     HAND_GAP,
     BOARD_HEIGHT,
     CONTROLS_HEIGHT,
@@ -161,7 +168,7 @@ function useRainbowGlow() {
   return rainbowColor;
 }
 
-function NameWithScore({ name, score, delta, tableChips, isRanked, scoreDetail, isPlayer }) {
+function NameWithScore({ name, score, delta, tableChips, isRanked, scoreDetail, isPlayer, animationStep = 0 }) {
   // Calculate point difference for this player
   let pointDelta = null;
   if (scoreDetail && isPlayer !== undefined) {
@@ -181,7 +188,7 @@ function NameWithScore({ name, score, delta, tableChips, isRanked, scoreDetail, 
     const pointDeltaColor = pointDeltaText && pointDeltaText.startsWith('+') ? colors.ok || '#2e7d32' : '#C62828';
     
     return (
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 4, position: 'relative' }}>
         <Text style={{ color: colors.text, fontWeight: '700', fontSize: responsive.LARGE_FONT_SIZE, marginRight: 8 }}>{name}</Text>
         <Text style={{ color: colors.sub, fontSize: responsive.BASE_FONT_SIZE }}>
           {chipText} 
@@ -193,8 +200,31 @@ function NameWithScore({ name, score, delta, tableChips, isRanked, scoreDetail, 
               marginLeft: 4
             }} 
           />
-          {chipDeltaText ? <Text style={{ color: chipDeltaColor }}> {chipDeltaText}</Text> : null}
+
         </Text>
+        
+        {/* Chip Change Indicator - appears at step 5 */}
+        {animationStep >= 5 && chipDeltaText && (
+          <View style={{
+            position: 'absolute',
+            right: -8,
+            top: '50%',
+            transform: [{ translateY: -10 }],
+            backgroundColor: chipDeltaColor,
+            paddingHorizontal: 6,
+            paddingVertical: 2,
+            borderRadius: 6,
+            zIndex: 1000,
+          }}>
+            <Text style={{ 
+              color: colors.text, 
+              fontSize: 10, 
+              fontWeight: '700' 
+            }}>
+              {chipDeltaText}
+            </Text>
+          </View>
+        )}
       </View>
     );
   } else {
@@ -205,7 +235,7 @@ function NameWithScore({ name, score, delta, tableChips, isRanked, scoreDetail, 
     const pointDeltaColor = pointDeltaText && pointDeltaText.startsWith('+') ? colors.ok || '#2e7d32' : '#C62828';
     
     return (
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 4, position: 'relative' }}>
         <Text style={{ color: colors.text, fontWeight: '700', fontSize: responsive.LARGE_FONT_SIZE, marginRight: 8 }}>{name}</Text>
         <Text style={{ color: colors.sub, fontSize: responsive.BASE_FONT_SIZE }}>
           {score ?? 0} {deltaText ? <Text style={{ color: deltaColor }}> {deltaText}</Text> : null}
@@ -229,7 +259,7 @@ function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onM
       <View ref={topRef} onLayout={onTopLayout} style={{ 
         flexDirection: "row", 
         alignSelf: "center", 
-        marginBottom: responsive.ROW_GAP, 
+        marginBottom: responsive.OPPONENT_ROW_GAP, 
         position: 'relative',
         // Rainbow glow for Fantasy Land
         ...(inFantasyland && {
@@ -244,7 +274,7 @@ function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onM
         {Array.from({ length: 3 }).map((_, i) => {
           const foulStyle = isFouled ? getFoulTransform(i) : {};
           return (
-            <View key={"opp_top_"+i} style={[{ marginRight: responsive.isSmallDevice ? 2 : 3 }, foulStyle]}>
+            <View key={"opp_top_"+i} style={[{ marginRight: responsive.OPPONENT_SLOT_GAP }, foulStyle]}>
               {hidden ? (
                 <Animated.View style={{ 
                   width: oppCardWidth, 
@@ -261,36 +291,14 @@ function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onM
           );
         })}
         
-        {/* Line Score Overlay for Top */}
-        {showScore && scoreDetail && (
-          <View style={{
-            position: 'absolute',
-            top: -8,
-            right: -8,
-            backgroundColor: colors.panel2,
-            borderRadius: 8,
-            paddingHorizontal: 6,
-            paddingVertical: 2,
-            borderWidth: 1,
-            borderColor: colors.outline,
-            zIndex: 1000,
-          }}>
-            <Text style={{ 
-              color: getLineScore(scoreDetail.b, 'top') >= 0 ? colors.ok || '#2e7d32' : '#C62828', 
-              fontSize: 12, 
-              fontWeight: '700' 
-            }}>
-              {getLineScore(scoreDetail.b, 'top') >= 0 ? `+${getLineScore(scoreDetail.b, 'top')}` : getLineScore(scoreDetail.b, 'top')}
-            </Text>
-          </View>
-        )}
+
       </View>
 
       {/* Middle Row */}
       <View ref={midRef} onLayout={onMidLayout} style={{ 
         flexDirection: "row", 
         alignSelf: "center", 
-        marginBottom: responsive.ROW_GAP, 
+        marginBottom: responsive.OPPONENT_ROW_GAP, 
         position: 'relative',
         // Rainbow glow for Fantasy Land
         ...(inFantasyland && {
@@ -305,7 +313,7 @@ function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onM
         {Array.from({ length: 5 }).map((_, i) => {
           const foulStyle = isFouled ? getFoulTransform(3 + i) : {};
           return (
-            <View key={"opp_mid_"+i} style={[{ marginRight: responsive.isSmallDevice ? 2 : 3 }, foulStyle]}>
+            <View key={"opp_mid_"+i} style={[{ marginRight: responsive.OPPONENT_SLOT_GAP }, foulStyle]}>
               {hidden ? (
                 <Animated.View style={{ 
                   width: oppCardWidth, 
@@ -322,36 +330,14 @@ function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onM
           );
         })}
         
-        {/* Line Score Overlay for Middle */}
-        {showScore && scoreDetail && (
-          <View style={{
-            position: 'absolute',
-            top: -8,
-            right: -8,
-            backgroundColor: colors.panel2,
-            borderRadius: 8,
-            paddingHorizontal: 6,
-            paddingVertical: 2,
-            borderWidth: 1,
-            borderColor: colors.outline,
-            zIndex: 1000,
-          }}>
-            <Text style={{ 
-              color: getLineScore(scoreDetail.b, 'middle') >= 0 ? colors.ok || '#2e7d32' : '#C62828', 
-              fontSize: 12, 
-              fontWeight: '700' 
-            }}>
-              {getLineScore(scoreDetail.b, 'middle') >= 0 ? `+${getLineScore(scoreDetail.b, 'middle')}` : getLineScore(scoreDetail.b, 'middle')}
-            </Text>
-          </View>
-        )}
+
       </View>
 
       {/* Bottom Row */}
       <View ref={botRef} onLayout={onBotLayout} style={{ 
         flexDirection: "row", 
         alignSelf: "center", 
-        marginBottom: responsive.ROW_GAP, 
+        marginBottom: responsive.OPPONENT_ROW_GAP, 
         position: 'relative',
         // Rainbow glow for Fantasy Land
         ...(inFantasyland && {
@@ -366,7 +352,7 @@ function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onM
         {Array.from({ length: 5 }).map((_, i) => {
           const foulStyle = isFouled ? getFoulTransform(8 + i) : {};
           return (
-            <View key={"opp_bot_"+i} style={[{ marginRight: responsive.isSmallDevice ? 2 : 3 }, foulStyle]}>
+            <View key={"opp_bot_"+i} style={[{ marginRight: responsive.OPPONENT_SLOT_GAP }, foulStyle]}>
               {hidden ? (
                 <Animated.View style={{ 
                   width: oppCardWidth, 
@@ -383,29 +369,7 @@ function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onM
           );
         })}
         
-        {/* Line Score Overlay for Bottom */}
-        {showScore && scoreDetail && (
-          <View style={{
-            position: 'absolute',
-            top: -8,
-            right: -8,
-            backgroundColor: colors.panel2,
-            borderRadius: 8,
-            paddingHorizontal: 6,
-            paddingVertical: 2,
-            borderWidth: 1,
-            borderColor: colors.outline,
-            zIndex: 1000,
-          }}>
-            <Text style={{ 
-              color: getLineScore(scoreDetail.b, 'bottom') >= 0 ? colors.ok || '#2e7d32' : '#C62828', 
-              fontSize: 12, 
-              fontWeight: '700' 
-            }}>
-              {getLineScore(scoreDetail.b, 'bottom') >= 0 ? `+${getLineScore(scoreDetail.b, 'bottom')}` : getLineScore(scoreDetail.b, 'bottom')}
-            </Text>
-          </View>
-        )}
+
         
         {/* Total Score Overlay for Bottom */}
         {showScore && scoreDetail && (
@@ -435,7 +399,7 @@ function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onM
   );
 }
 
-function ScoreBubbles({ show, playerAnchors, oppAnchors, detail }) {
+function ScoreBubbles({ show, playerAnchors, oppAnchors, detail, animationStep }) {
   if (!show || !detail) return null;
   const a = detail.a, b = detail.b;
   const BUBBLE_W = 24, BUBBLE_H = 20;
@@ -462,12 +426,12 @@ function ScoreBubbles({ show, playerAnchors, oppAnchors, detail }) {
 
   return (
     <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, zIndex: 999 }}>
-      {bubbleAtPoint(playerAnchors.top, av.top, 'pt')}
-      {bubbleAtPoint(playerAnchors.middle, av.middle, 'pm')}
-      {bubbleAtPoint(playerAnchors.bottom, av.bottom, 'pb')}
-      {bubbleAtPoint(oppAnchors.top, bv.top, 'ot')}
-      {bubbleAtPoint(oppAnchors.middle, bv.middle, 'om')}
-      {bubbleAtPoint(oppAnchors.bottom, bv.bottom, 'ob')}
+      {animationStep >= 1 && bubbleAtPoint(playerAnchors.top, av.top, 'pt')}
+      {animationStep >= 1 && bubbleAtPoint(oppAnchors.top, bv.top, 'ot')}
+      {animationStep >= 2 && bubbleAtPoint(playerAnchors.middle, av.middle, 'pm')}
+      {animationStep >= 2 && bubbleAtPoint(oppAnchors.middle, bv.middle, 'om')}
+      {animationStep >= 3 && bubbleAtPoint(playerAnchors.bottom, av.bottom, 'pb')}
+      {animationStep >= 3 && bubbleAtPoint(oppAnchors.bottom, bv.bottom, 'ob')}
     </View>
   );
 }
@@ -486,6 +450,60 @@ function getTotalScore(d) {
   const bottom = getLineScore(d, 'bottom');
   const scoopBonus = d.scoop || 0; // Include scoop bonus (+3)
   return top + middle + bottom + scoopBonus;
+}
+
+// Animated Chip Counter Component
+function AnimatedChipCounter({ startValue, endValue, isAnimating, responsive, isPlayer = false }) {
+  const [displayValue, setDisplayValue] = useState(startValue);
+  
+  useEffect(() => {
+    if (isAnimating && startValue !== endValue) {
+      const duration = 1500; // 1.5 seconds
+      const steps = 30; // 30 steps for smooth animation
+      const stepDuration = duration / steps;
+      const increment = (endValue - startValue) / steps;
+      
+      let currentStep = 0;
+      const interval = setInterval(() => {
+        currentStep++;
+        const newValue = Math.round(startValue + (increment * currentStep));
+        setDisplayValue(newValue);
+        
+        if (currentStep >= steps) {
+          setDisplayValue(endValue);
+          clearInterval(interval);
+        }
+      }, stepDuration);
+      
+      return () => clearInterval(interval);
+    } else {
+      setDisplayValue(endValue);
+    }
+  }, [startValue, endValue, isAnimating]);
+  
+  // Determine text color based on animation state and direction
+  const getTextColor = () => {
+    if (!isPlayer || !isAnimating || startValue === endValue) {
+      return colors.sub; // Default color
+    }
+    
+    if (endValue > startValue) {
+      return colors.ok || '#2e7d32'; // Green for increasing
+    } else if (endValue < startValue) {
+      return '#C62828'; // Red for decreasing
+    }
+    
+    return colors.sub; // Default for no change
+  };
+  
+  return (
+    <Text style={{ 
+      color: getTextColor(), 
+      fontSize: responsive.BASE_FONT_SIZE 
+    }}>
+      {displayValue}
+    </Text>
+  );
 }
 
 export default function Play({ route }) {
@@ -511,7 +529,7 @@ export default function Play({ route }) {
     const isLargeDevice = screenWidth >= 414;
     
     // Calculate card sizes based on screen size - opponent board smaller, player board larger
-    const opponentCardWidthPercent = 0.09; // 9% of screen width for opponent board (smaller, just for viewing)
+    const opponentCardWidthPercent = 0.10; // 10% of screen width for opponent board (smaller, just for viewing)
     const playerCardWidthPercent = 0.1425; // 14.25% of screen width for player board (larger, for interaction)
     
     const opponentBaseSlotW = Math.min(Math.max(screenWidth * opponentCardWidthPercent, 30), 60);
@@ -658,6 +676,11 @@ export default function Play({ route }) {
   const [showScore, setShowScore] = useState(false);
   const [scoreDetail, setScoreDetail] = useState(null);
   const [sortMode, setSortMode] = useState('rank'); // 'rank' or 'suit'
+  
+  // Animation state for score reveal sequence
+  const [scoreAnimationStep, setScoreAnimationStep] = useState(0); // 0 = none, 1 = top, 2 = middle, 3 = bottom, 4 = total, 5 = chip count indicator, 6 = chip stack animation
+  const [chipAnimationStart, setChipAnimationStart] = useState(false);
+  const [showChipChange, setShowChipChange] = useState(false);
 
   // measure rows for opponent
   const oTopRef = useRef(null), oMidRef = useRef(null), oBotRef = useRef(null);
@@ -700,6 +723,8 @@ export default function Play({ route }) {
           const scoreDetail = { a: pair.aUserId === meId ? pair.a : pair.b, b: pair.aUserId === meId ? pair.b : pair.a };
           setScoreDetail(scoreDetail);
           setShowScore(true); // persist until next round
+          // Reset animation step to start the sequence
+          setScoreAnimationStep(0);
         }
       }
       if (evt === 'action:ready') {
@@ -717,13 +742,114 @@ export default function Play({ route }) {
         // Handle auto-commit punishment
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
-      
-
-      
       applyEvent(evt, data);
     });
-    return () => off();
+    
+    return off;
   }, []); // Remove applyEvent from dependencies to prevent infinite re-renders
+
+  // Animation sequence effect - triggers when scoring starts
+  useEffect(() => {
+    if (showScore && scoreDetail) {
+      // Reset animation step
+      setScoreAnimationStep(0);
+      
+      // Start animation sequence with delays and sound effects
+      const timer1 = setTimeout(() => {
+        setScoreAnimationStep(1); // Top line
+        playSfx('pop1'); // Play pop1.wav for top row
+      }, 500);
+      
+      const timer2 = setTimeout(() => {
+        setScoreAnimationStep(2); // Middle line
+        playSfx('pop2'); // Play pop2.wav for middle row
+      }, 1000);
+      
+      const timer3 = setTimeout(() => {
+        setScoreAnimationStep(3); // Bottom line
+        playSfx('pop3'); // Play pop3.wav for bottom row
+      }, 1500);
+      
+      const timer4 = setTimeout(() => {
+        setScoreAnimationStep(4); // Total score
+        playSfx('pop4'); // Play pop4.wav for total score
+      }, 2000);
+      
+      const timer5 = setTimeout(() => {
+        setScoreAnimationStep(5); // Chip count indicator
+        setShowChipChange(true);
+      }, 2500); // 500ms after total score
+      
+      const timer6 = setTimeout(() => {
+        setScoreAnimationStep(6); // Chip stack animation
+        setChipAnimationStart(true);
+      }, 3000); // 500ms after chip count indicator
+      
+      return () => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+        clearTimeout(timer3);
+        clearTimeout(timer4);
+        clearTimeout(timer5);
+        clearTimeout(timer6);
+      };
+    } else {
+      // Reset animation when scoring ends
+      setScoreAnimationStep(0);
+      setShowChipChange(false);
+    }
+  }, [showScore, scoreDetail]);
+
+  // Function to manually trigger animation
+  const triggerAnimation = () => {
+    if (scoreDetail) {
+      setShowScore(true);
+      setScoreAnimationStep(0);
+      setChipAnimationStart(false);
+      setShowChipChange(false);
+      
+      // Start animation sequence with delays and sound effects
+      const timer1 = setTimeout(() => {
+        setScoreAnimationStep(1); // Top line
+        playSfx('pop1'); // Play pop1.wav for top row
+      }, 500);
+      
+      const timer2 = setTimeout(() => {
+        setScoreAnimationStep(2); // Middle line
+        playSfx('pop2'); // Play pop2.wav for middle row
+      }, 1000);
+      
+      const timer3 = setTimeout(() => {
+        setScoreAnimationStep(3); // Bottom line
+        playSfx('pop3'); // Play pop3.wav for bottom row
+      }, 1500);
+      
+      const timer4 = setTimeout(() => {
+        setScoreAnimationStep(4); // Total score
+        playSfx('pop4'); // Play pop4.wav for total score
+      }, 2000);
+      
+      const timer5 = setTimeout(() => {
+        setScoreAnimationStep(5); // Chip count indicator
+        setShowChipChange(true);
+      }, 2500); // 500ms after total score
+      
+      const timer6 = setTimeout(() => {
+        setScoreAnimationStep(6); // Chip stack animation
+        setChipAnimationStart(true); // Start chip animation
+      }, 3000); // 500ms after chip count indicator
+      
+      // Clean up timers after animation completes
+      setTimeout(() => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+        clearTimeout(timer3);
+        clearTimeout(timer4);
+        clearTimeout(timer5);
+        clearTimeout(timer6);
+      }, 4500); // Extended to allow for chip animation and indicator
+    }
+  };
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -788,6 +914,19 @@ export default function Play({ route }) {
   const opponent = useMemo(() => {
     return others[0] || null;
   }, [others]);
+  
+  // Calculate final chip values for animation
+  const finalChipValues = useMemo(() => {
+    if (!reveal?.results) return { player: me.tableChips || 500, opponent: others[0]?.tableChips || 500 };
+    
+    const playerChipChange = reveal.results[meId] || 0;
+    const opponentChipChange = reveal.results[others[0]?.userId] || 0;
+    
+    return {
+      player: (me.tableChips || 500) + (playerChipChange * 10),
+      opponent: (others[0]?.tableChips || 500) + (opponentChipChange * 10)
+    };
+  }, [reveal?.results, me.tableChips, others[0]?.tableChips, meId, others]);
   const opponentBoard = useMemo(() => {
     if (!reveal) return { top: [], middle: [], bottom: [] };
     const opp = reveal.boards?.find(b => b.userId === opponent?.userId);
@@ -951,6 +1090,29 @@ export default function Play({ route }) {
           1 point = 10 chips
         </Text>
       </View>
+      
+      {/* Test Reveal Button - Top Right */}
+      <Pressable
+        onPress={triggerAnimation}
+        style={{
+          position: 'absolute',
+          top: currentResponsive.isSmallDevice ? 50 : 60,
+          right: 20,
+          backgroundColor: colors.accent,
+          paddingHorizontal: 12,
+          paddingVertical: 6,
+          borderRadius: 8,
+          zIndex: 1002,
+        }}
+      >
+        <Text style={{ 
+          color: colors.text, 
+          fontSize: 12, 
+          fontWeight: '600' 
+        }}>
+          Test Reveal
+        </Text>
+      </Pressable>
       {/* Opponent area - responsive height */}
       <View style={{ 
         height: currentResponsive.SECTION_SPACING * 3.5, // Increased height to accommodate name and board
@@ -960,15 +1122,64 @@ export default function Play({ route }) {
       }}>
         {others[0] ? (
           <View style={{ alignItems: "center" }}>
-            <NameWithScore 
-              name={others[0].name} 
-              score={others[0].score} 
-              tableChips={others[0].tableChips}
-              isRanked={isRanked}
-              delta={reveal?.results?.[others[0].userId]}
-              scoreDetail={scoreDetail}
-              isPlayer={false}
-            />
+            {/* Opponent Name - centered over board */}
+            <Text style={{ 
+              color: colors.text, 
+              fontWeight: '700', 
+              fontSize: currentResponsive.LARGE_FONT_SIZE, 
+              marginBottom: 8 
+            }}>
+              {others[0].name}
+            </Text>
+            
+            {/* Opponent Chip Stack - underneath name */}
+            <View style={{ 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              position: 'relative',
+              minWidth: 200 // Ensure enough space for the indicator
+            }}>
+              {/* Centered chip stack */}
+              <View style={{ 
+                flexDirection: 'row', 
+                alignItems: 'center', 
+                justifyContent: 'center'
+              }}>
+                <AnimatedChipCounter
+                  startValue={others[0].tableChips || 500}
+                  endValue={finalChipValues.opponent}
+                  isAnimating={chipAnimationStart}
+                  responsive={currentResponsive}
+                />
+                <Image 
+                  source={require('../../assets/images/chips.png')} 
+                  style={{ 
+                    width: currentResponsive.BASE_FONT_SIZE * 1.2, 
+                    height: currentResponsive.BASE_FONT_SIZE * 1.2,
+                    marginLeft: 4
+                  }} 
+                />
+              </View>
+              
+              {/* Chip Change Indicator - positioned absolutely to the right */}
+              {showChipChange && scoreDetail && (
+                <View style={{
+                  position: 'absolute',
+                  left: '100%',
+                  marginLeft: 8,
+                  opacity: 0.9
+                }}>
+                  <Text style={{
+                    color: finalChipValues.opponent > (others[0].tableChips || 500) ? '#2e7d32' : '#C62828', // Green for gain, red for loss
+                    fontSize: currentResponsive.SMALL_FONT_SIZE,
+                    fontWeight: '700'
+                  }}>
+                    {finalChipValues.opponent > (others[0].tableChips || 500) ? '+' : ''}
+                    {Math.abs(finalChipValues.opponent - (others[0].tableChips || 500))} chips
+                  </Text>
+                </View>
+              )}
+            </View>
           </View>
         ) : null}
         <View style={{ marginTop: currentResponsive.SECTION_SPACING * 0.15 }}>
@@ -1001,15 +1212,66 @@ export default function Play({ route }) {
         position: 'relative'
       }}>
                   <View style={{ alignSelf: "center", marginBottom: currentResponsive.SECTION_SPACING * 0.15 }}>
-            <NameWithScore 
-              name={me.name || 'You'} 
-              score={me.score} 
-              tableChips={me.tableChips}
-              isRanked={isRanked}
-              delta={reveal?.results?.[me.userId]}
-              scoreDetail={scoreDetail}
-              isPlayer={true}
-            />
+            {/* Player Name - centered over board */}
+            <Text style={{ 
+              color: colors.text, 
+              fontWeight: '700', 
+              fontSize: currentResponsive.LARGE_FONT_SIZE, 
+              marginBottom: 8,
+              textAlign: 'center'
+            }}>
+              {me.name || 'You'}
+            </Text>
+            
+            {/* Player Chip Stack - underneath name */}
+            <View style={{ 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              position: 'relative',
+              minWidth: 200 // Ensure enough space for the indicator
+            }}>
+              {/* Centered chip stack */}
+              <View style={{ 
+                flexDirection: 'row', 
+                alignItems: 'center', 
+                justifyContent: 'center'
+              }}>
+                <AnimatedChipCounter
+                  startValue={me.tableChips || 500}
+                  endValue={finalChipValues.player}
+                  isAnimating={chipAnimationStart}
+                  responsive={currentResponsive}
+                  isPlayer={true}
+                />
+                <Image 
+                  source={require('../../assets/images/chips.png')} 
+                  style={{ 
+                    width: currentResponsive.BASE_FONT_SIZE * 1.2, 
+                    height: currentResponsive.BASE_FONT_SIZE * 1.2,
+                    marginLeft: 4
+                  }} 
+                />
+              </View>
+              
+              {/* Chip Change Indicator - positioned absolutely to the right */}
+              {showChipChange && scoreDetail && (
+                <View style={{
+                  position: 'absolute',
+                  left: '100%',
+                  marginLeft: 8,
+                  opacity: 0.9
+                }}>
+                  <Text style={{
+                    color: finalChipValues.player > (me.tableChips || 500) ? '#2e7d32' : '#C62828', // Green for gain, red for loss
+                    fontSize: currentResponsive.SMALL_FONT_SIZE,
+                    fontWeight: '700'
+                  }}>
+                    {finalChipValues.player > (me.tableChips || 500) ? '+' : ''}
+                    {Math.abs(finalChipValues.player - (me.tableChips || 500))} chips
+                  </Text>
+                </View>
+              )}
+            </View>
           </View>
         <View style={{ 
           alignSelf: "center", 
@@ -1037,6 +1299,7 @@ export default function Play({ route }) {
             scoreDetail={scoreDetail}
             isPlayer={true}
             rowType="top"
+            animationStep={scoreAnimationStep}
           />
           <Row
             capacity={5}
@@ -1056,6 +1319,7 @@ export default function Play({ route }) {
             scoreDetail={scoreDetail}
             isPlayer={true}
             rowType="middle"
+            animationStep={scoreAnimationStep}
           />
           <Row
             capacity={5}
@@ -1075,6 +1339,7 @@ export default function Play({ route }) {
             scoreDetail={scoreDetail}
             isPlayer={true}
             rowType="bottom"
+            animationStep={scoreAnimationStep}
           />
         </View>
         
@@ -1300,6 +1565,15 @@ export default function Play({ route }) {
           </View>
         </View>
       )}
+      
+      {/* Score Bubbles with Animation */}
+      <ScoreBubbles 
+        show={showScore} 
+        playerAnchors={playerAnchors} 
+        oppAnchors={oppAnchors} 
+        detail={scoreDetail}
+        animationStep={scoreAnimationStep}
+      />
     </View>
   );
 }
@@ -1322,6 +1596,7 @@ function Row({
   scoreDetail = null,
   isPlayer = true,
   rowType = 'top',
+  animationStep = 0,
 }) {
   const committedCount = committed.length;
   const stagedCount = staged.length;
@@ -1329,12 +1604,7 @@ function Row({
   const gap = compact ? (responsive.isSmallDevice ? 1 : 2) : responsive.SLOT_GAP;
   const rainbowColor = useRainbowGlow();
 
-  // Calculate line score for this row
-  let lineScore = null;
-  if (showScore && scoreDetail) {
-    const playerData = isPlayer ? scoreDetail.a : scoreDetail.b;
-    lineScore = getLineScore(playerData, rowType);
-  }
+
 
   // Calculate position for score overlay - positioned at top-right of rightmost card
   const actualCards = committedCount + stagedCount;
@@ -1398,32 +1668,10 @@ function Row({
         ))}
       </View>
       
-      {/* Line Score Overlay */}
-      {lineScore !== null && (
-        <View style={{
-          position: 'absolute',
-          top: -8,
-          right: rowType === 'top' ? (5 - capacity) * (responsive.SLOT_W + gap) - responsive.SLOT_W : 0,
-          backgroundColor: colors.panel2,
-          borderRadius: 8,
-          paddingHorizontal: 6,
-          paddingVertical: 2,
-          borderWidth: 1,
-          borderColor: colors.outline,
-          zIndex: 1000,
-        }}>
-          <Text style={{ 
-            color: lineScore >= 0 ? colors.ok || '#2e7d32' : '#C62828', 
-            fontSize: 12, 
-            fontWeight: '700' 
-          }}>
-            {lineScore >= 0 ? `+${lineScore}` : lineScore}
-          </Text>
-        </View>
-      )}
+
       
       {/* Total Score Overlay (only on bottom row) */}
-      {rowType === 'bottom' && showScore && scoreDetail && (
+      {rowType === 'bottom' && showScore && scoreDetail && animationStep >= 4 && (
         <View style={{
           position: 'absolute',
           bottom: -8,

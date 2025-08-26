@@ -160,13 +160,15 @@ async function handleAllPlayersReady(room, io) {
                 });
 
                 if (boards.length === 2) {
-                  const grossA = Math.max(det.a.lines.top, 0) + Math.max(det.a.lines.middle, 0) + Math.max(det.a.lines.bottom, 0)
+                  // Use actual line scores (including negatives) instead of converting to 0
+                  const grossA = det.a.lines.top + det.a.lines.middle + det.a.lines.bottom
                     + (det.a.scoop > 0 ? det.a.scoop : 0) + det.a.royalties;
-                  const grossB = Math.max(det.b.lines.top, 0) + Math.max(det.b.lines.middle, 0) + Math.max(det.b.lines.bottom, 0)
+                  const grossB = det.b.lines.top + det.b.lines.middle + det.b.lines.bottom
                     + (det.b.scoop > 0 ? det.b.scoop : 0) + det.b.royalties;
                   const diff = grossA - grossB;
                   totals[A.userId] = (totals[A.userId] || 0) + diff;
-                  totals[B.userId] = (totals[B.userId] || 0) - diff;
+                  // Player B gets the opposite (no need to subtract, just add negative)
+                  totals[B.userId] = (totals[B.userId] || 0) + (-diff);
                 }
               }
             }
@@ -287,9 +289,9 @@ async function handleAllPlayersReady(room, io) {
             });
 
             if (playersArr.length === 2) {
-              const grossA = Math.max(det.a.lines.top, 0) + Math.max(det.a.lines.middle, 0) + Math.max(det.a.lines.bottom, 0)
+              const grossA = det.a.lines.top + det.a.lines.middle + det.a.lines.bottom
                 + (det.a.scoop > 0 ? det.a.scoop : 0) + det.a.royalties;
-              const grossB = Math.max(det.b.lines.top, 0) + Math.max(det.b.lines.middle, 0) + Math.max(det.b.lines.bottom, 0)
+              const grossB = det.b.lines.top + det.b.lines.middle + det.b.lines.bottom
                 + (det.b.scoop > 0 ? det.b.scoop : 0) + det.b.royalties;
               const diff = grossA - grossB;
               totals[A.userId] = (totals[A.userId] || 0) + diff;
@@ -448,9 +450,9 @@ async function handleAllPlayersReady(room, io) {
 
         if (playersArr.length === 2) {
           // Difference-based scoring: compute gross points for each, then use the difference
-          const grossA = Math.max(det.a.lines.top, 0) + Math.max(det.a.lines.middle, 0) + Math.max(det.a.lines.bottom, 0)
+          const grossA = det.a.lines.top + det.a.lines.middle + det.a.lines.bottom
             + (det.a.scoop > 0 ? det.a.scoop : 0) + det.a.royalties;
-          const grossB = Math.max(det.b.lines.top, 0) + Math.max(det.b.lines.middle, 0) + Math.max(det.b.lines.bottom, 0)
+          const grossB = det.b.lines.top + det.b.lines.middle + det.b.lines.bottom
             + (det.b.scoop > 0 ? det.b.scoop : 0) + det.b.royalties;
           const diff = grossA - grossB;
           totals[A.userId] = (totals[A.userId] || 0) + diff;
@@ -593,9 +595,9 @@ async function handleAllPlayersReady(room, io) {
               });
 
               if (boards.length === 2) {
-                const grossA = Math.max(det.a.lines.top, 0) + Math.max(det.a.lines.middle, 0) + Math.max(det.a.lines.bottom, 0)
+                const grossA = det.a.lines.top + det.a.lines.middle + det.a.lines.bottom
                   + (det.a.scoop > 0 ? det.a.scoop : 0) + det.a.royalties;
-                const grossB = Math.max(det.b.lines.top, 0) + Math.max(det.b.lines.middle, 0) + Math.max(det.b.lines.bottom, 0)
+                const grossB = det.b.lines.top + det.b.lines.middle + det.b.lines.bottom
                   + (det.b.scoop > 0 ? det.b.scoop : 0) + det.b.royalties;
                 const diff = grossA - grossB;
                 totals[A.userId] = (totals[A.userId] || 0) + diff;
@@ -672,9 +674,9 @@ async function handleAllPlayersReady(room, io) {
             });
 
             if (playersArr.length === 2) {
-              const grossA = Math.max(det.a.lines.top, 0) + Math.max(det.a.lines.middle, 0) + Math.max(det.a.lines.bottom, 0)
+              const grossA = det.a.lines.top + det.a.lines.middle + det.a.lines.bottom
                 + (det.a.scoop > 0 ? det.a.scoop : 0) + det.a.royalties;
-              const grossB = Math.max(det.b.lines.top, 0) + Math.max(det.b.lines.middle, 0) + Math.max(det.b.lines.bottom, 0)
+              const grossB = det.b.lines.top + det.b.lines.middle + det.b.lines.bottom
                 + (det.b.scoop > 0 ? det.b.scoop : 0) + det.b.royalties;
               const diff = grossA - grossB;
               totals[A.userId] = (totals[A.userId] || 0) + diff;
@@ -852,9 +854,9 @@ async function handleAllPlayersReady(room, io) {
               });
 
               if (boards.length === 2) {
-                const grossA = Math.max(det.a.lines.top, 0) + Math.max(det.a.lines.middle, 0) + Math.max(det.a.lines.bottom, 0)
+                const grossA = det.a.lines.top + det.a.lines.middle + det.a.lines.bottom
                   + (det.a.scoop > 0 ? det.a.scoop : 0) + det.a.royalties;
-                const grossB = Math.max(det.b.lines.top, 0) + Math.max(det.b.lines.middle, 0) + Math.max(det.b.lines.bottom, 0)
+                const grossB = det.b.lines.top + det.b.lines.middle + det.b.lines.bottom
                   + (det.b.scoop > 0 ? det.b.scoop : 0) + det.b.royalties;
                 const diff = grossA - grossB;
                 totals[A.userId] = (totals[A.userId] || 0) + diff;
@@ -931,9 +933,9 @@ async function handleAllPlayersReady(room, io) {
             });
 
             if (playersArr.length === 2) {
-              const grossA = Math.max(det.a.lines.top, 0) + Math.max(det.a.lines.middle, 0) + Math.max(det.a.lines.bottom, 0)
+              const grossA = det.a.lines.top + det.a.lines.middle + det.a.lines.bottom
                 + (det.a.scoop > 0 ? det.a.scoop : 0) + det.a.royalties;
-              const grossB = Math.max(det.b.lines.top, 0) + Math.max(det.b.lines.middle, 0) + Math.max(det.b.lines.bottom, 0)
+              const grossB = det.b.lines.top + det.b.lines.middle + det.b.lines.bottom
                 + (det.b.scoop > 0 ? det.b.scoop : 0) + det.b.royalties;
               const diff = grossA - grossB;
               totals[A.userId] = (totals[A.userId] || 0) + diff;

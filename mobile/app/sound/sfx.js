@@ -4,12 +4,20 @@ const sources = {
   place: require('../../assets/sounds/place.wav'),
   commit: require('../../assets/sounds/commit.wav'),
   roundstart: require('../../assets/sounds/roundstart.wav'),
+  pop1: require('../../assets/sounds/pop1.wav'),
+  pop2: require('../../assets/sounds/pop2.wav'),
+  pop3: require('../../assets/sounds/pop3.wav'),
+  pop4: require('../../assets/sounds/pop4.wav'),
 };
 
 const defaultVolumes = {
   place: 0.5,
   commit: 1.0,
   roundstart: 1.0,
+  pop1: 0.7,
+  pop2: 0.7,
+  pop3: 0.7,
+  pop4: 0.7,
 };
 
 const sounds = {};

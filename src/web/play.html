@@ -473,12 +473,14 @@
         const mineTop = getLineScore(mine, 'top');
         const mineMiddle = getLineScore(mine, 'middle');
         const mineBottom = getLineScore(mine, 'bottom');
-        const mineTotal = mineTop + mineMiddle + mineBottom;
+        const mineScoop = mine.scoop || 0;
+        const mineTotal = mineTop + mineMiddle + mineBottom + mineScoop;
         
         const oppTop = getLineScore(opp, 'top');
         const oppMiddle = getLineScore(opp, 'middle');
         const oppBottom = getLineScore(opp, 'bottom');
-        const oppTotal = oppTop + oppMiddle + oppBottom;
+        const oppScoop = opp.scoop || 0;
+        const oppTotal = oppTop + oppMiddle + oppBottom + oppScoop;
         
         // Calculate difference and chip conversion
         const difference = mineTotal - oppTotal;
@@ -498,6 +500,7 @@
                   <tr><td>Top</td><td style="text-align:right;">${mineTop>=0?'+':''}${mineTop}</td><td style="text-align:right;">${oppTop>=0?'+':''}${oppTop}</td></tr>
                   <tr><td>Middle</td><td style="text-align:right;">${mineMiddle>=0?'+':''}${mineMiddle}</td><td style="text-align:right;">${oppMiddle>=0?'+':''}${oppMiddle}</td></tr>
                   <tr><td>Bottom</td><td style="text-align:right;">${mineBottom>=0?'+':''}${mineBottom}</td><td style="text-align:right;">${oppBottom>=0?'+':''}${oppBottom}</td></tr>
+                  ${mineScoop > 0 || oppScoop > 0 ? `<tr><td>Scoop Bonus</td><td style="text-align:right;">${mineScoop>=0?'+':''}${mineScoop}</td><td style="text-align:right;">${oppScoop>=0?'+':''}${oppScoop}</td></tr>` : ''}
                   <tr style="border-top:1px solid #2a3244;font-weight:600;">
                     <td>Total</td><td style="text-align:right;">${mineTotal>=0?'+':''}${mineTotal}</td><td style="text-align:right;">${oppTotal>=0?'+':''}${oppTotal}</td></tr>
                 </tbody>

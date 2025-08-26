@@ -167,6 +167,77 @@ function formatRoomData(room) {
     if (room.currentRound !== 5) {
       output += `   ⚠️  WARNING: currentRound should be 5 in reveal phase!\n`;
     }
+    
+    // Detailed scoring breakdown for reveal phase
+    output += `\n📊 DETAILED SCORING BREAKDOWN:\n`;
+    const playersArr = Object.values(room.players);
+    if (playersArr.length === 2) {
+      const [playerA, playerB] = playersArr;
+      
+      // Calculate expected scoring
+      output += `\n👤 ${playerA.name} (Player A):\n`;
+      output += `   Board: T[${playerA.board.top.join(', ')}] M[${playerA.board.middle.join(', ')}] B[${playerA.board.bottom.join(', ')}]\n`;
+      output += `   Score: ${playerA.score || 0}\n`;
+      if (room.isRanked) {
+        output += `   💰 Table Chips: ${playerA.tableChips || 500}\n`;
+      }
+      
+      output += `\n👤 ${playerB.name} (Player B):\n`;
+      output += `   Board: T[${playerB.board.top.join(', ')}] M[${playerB.board.middle.join(', ')}] B[${playerB.board.bottom.join(', ')}]\n`;
+      output += `   Score: ${playerB.score || 0}\n`;
+      if (room.isRanked) {
+        output += `   💰 Table Chips: ${playerB.tableChips || 500}\n`;
+      }
+      
+      // Check for fouls
+      const aFouled = playerA.board.top.length !== 3 || playerA.board.middle.length !== 5 || playerA.board.bottom.length !== 5;
+      const bFouled = playerB.board.top.length !== 3 || playerB.board.middle.length !== 5 || playerB.board.bottom.length !== 5;
+      
+      output += `\n🚨 FOUL DETECTION:\n`;
+      output += `   ${playerA.name} fouled: ${aFouled ? 'YES' : 'NO'}\n`;
+      output += `   ${playerB.name} fouled: ${bFouled ? 'YES' : 'NO'}\n`;
+      
+      if (aFouled || bFouled) {
+        output += `\n🎯 FOUL SCORING EXPECTED:\n`;
+        if (aFouled && !bFouled) {
+          output += `   ${playerB.name} should get:\n`;
+          output += `     +6 (foul penalty) + 3 (scoop bonus) + royalties\n`;
+          output += `     +1 for each row win (all 3 rows)\n`;
+        } else if (!aFouled && bFouled) {
+          output += `   ${playerA.name} should get:\n`;
+          output += `     +6 (foul penalty) + 3 (scoop bonus) + royalties\n`;
+          output += `     +1 for each row win (all 3 rows)\n`;
+        } else if (aFouled && bFouled) {
+          output += `   Both fouled - no scoring\n`;
+        }
+      }
+      
+      // Calculate expected royalties
+      output += `\n👑 ROYALTIES ANALYSIS:\n`;
+      // This would require importing the scoring functions, but for now we'll note the cards
+      output += `   ${playerA.name} top: [${playerA.board.top.join(', ')}] - check for pairs/trips\n`;
+      output += `   ${playerA.name} middle: [${playerA.board.middle.join(', ')}] - check for trips/straight/flush/full house/quads\n`;
+      output += `   ${playerA.name} bottom: [${playerA.board.bottom.join(', ')}] - check for straight/flush/full house/quads\n`;
+      output += `   ${playerB.name} top: [${playerB.board.top.join(', ')}] - check for pairs/trips\n`;
+      output += `   ${playerB.name} middle: [${playerB.board.middle.join(', ')}] - check for trips/straight/flush/full house/quads\n`;
+      output += `   ${playerB.name} bottom: [${playerB.board.bottom.join(', ')}] - check for straight/flush/full house/quads\n`;
+      
+      // Point difference and chip conversion
+      const scoreDiff = (playerA.score || 0) - (playerB.score || 0);
+      const chipDiff = Math.abs(scoreDiff) * 10;
+      output += `\n💰 POINT/CHIP CONVERSION:\n`;
+      output += `   Point difference: ${scoreDiff} (${playerA.name} ${scoreDiff > 0 ? '+' : ''}${scoreDiff})\n`;
+      output += `   Chip exchange: ${chipDiff} chips (${scoreDiff > 0 ? playerA.name : playerB.name} gets ${chipDiff})\n`;
+      
+      if (room.isRanked) {
+        const expectedChipsA = 500 + (scoreDiff * 10);
+        const expectedChipsB = 500 - (scoreDiff * 10);
+        output += `   Expected ${playerA.name} chips: ${expectedChipsA}\n`;
+        output += `   Expected ${playerB.name} chips: ${expectedChipsB}\n`;
+        output += `   Actual ${playerA.name} chips: ${playerA.tableChips || 500}\n`;
+        output += `   Actual ${playerB.name} chips: ${playerB.tableChips || 500}\n`;
+      }
+    }
   }
 
   // Next round ready state
