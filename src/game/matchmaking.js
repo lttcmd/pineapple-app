@@ -2,8 +2,7 @@
 import { mem } from "../store/mem.js";
 import { Events } from "../net/events.js";
 import { id } from "../utils/ids.js";
-import { createRoom } from "./state.js";
-import { startRoundHandler } from "./rooms.js";
+import { startRoundHandler } from "./new/GameEngineAdapter.js";
 import { getUserChips, updateUserChips } from "../store/database.js";
 
 // Queue of players searching for ranked matches
@@ -64,7 +63,7 @@ async function checkForMatches(io) {
   rankedQueue.delete(player2Id);
   
   // Create a room for them
-  const roomId = createRankedRoom();
+  const roomId = await createRankedRoom(io);
   
   // Notify both players
   player1.socket.emit(Events.MATCH_FOUND, { 
@@ -90,56 +89,48 @@ async function checkForMatches(io) {
     await updateUserChips(player1.dbId, -500);
     await updateUserChips(player2.dbId, -500);
     
+    // Add players to GameEngine
+    const engine = room.engine;
+    const player1Data = engine.addPlayer(player1Id, player1.name, player1.socket.id, false);
+    const player2Data = engine.addPlayer(player2Id, player2.name, player2.socket.id, false);
+    
+    // Update legacy room data for compatibility
     room.players.set(player1Id, {
       userId: player1Id,
-      name: player1.name,
+      name: player1Data.name,
       socketId: player1.socket.id,
       dbId: player1.dbId, // Add dbId for chip updates
-      board: { top: [], middle: [], bottom: [] },
-      hand: [],
-      discards: [],
-      ready: false, // Will be set to ready after startRound
-      currentDeal: [],
-      score: 0,
+      board: player1Data.board,
+      hand: player1Data.hand,
+      discards: player1Data.discards,
+      ready: player1Data.ready,
+      currentDeal: player1Data.currentDeal,
+      score: player1Data.score,
       tableChips: 500, // Initial stake on table
-      inFantasyland: false,
-      hasPlayedFantasylandHand: false,
-      roundComplete: false,
+      inFantasyland: player1Data.inFantasyland,
+      hasPlayedFantasylandHand: player1Data.hasPlayedFantasylandHand,
+      roundComplete: player1Data.roundComplete,
     });
     
     room.players.set(player2Id, {
       userId: player2Id,
-      name: player2.name,
+      name: player2Data.name,
       socketId: player2.socket.id,
       dbId: player2.dbId, // Add dbId for chip updates
-      board: { top: [], middle: [], bottom: [] },
-      hand: [],
-      discards: [],
-      ready: false, // Will be set to ready after startRound
-      currentDeal: [],
-      score: 0,
+      board: player2Data.board,
+      hand: player2Data.hand,
+      discards: player2Data.discards,
+      ready: player2Data.ready,
+      currentDeal: player2Data.currentDeal,
+      score: player2Data.score,
       tableChips: 500, // Initial stake on table
-      inFantasyland: false,
-      hasPlayedFantasylandHand: false,
-      roundComplete: false,
+      inFantasyland: player2Data.inFantasyland,
+      hasPlayedFantasylandHand: player2Data.hasPlayedFantasylandHand,
+      roundComplete: player2Data.roundComplete,
     });
     
-    // Emit room state to both players
-    io.to(roomId).emit(Events.ROOM_STATE, {
-      roomId,
-      isRanked: room.isRanked, // Add ranked flag
-      players: Array.from(room.players.values()).map(p => ({
-        userId: p.userId,
-        name: p.name,
-        score: p.score,
-        tableChips: p.tableChips || 0, // Add table chips
-        ready: p.ready,
-        inFantasyland: p.inFantasyland
-      })),
-      phase: room.phase,
-      round: room.round,
-      roundIndex: room.roundIndex
-    });
+    // Emit room state to both players using GameEngine
+    engine.emitGameState();
     
     // Auto-start the game for ranked matches
     setTimeout(() => {
@@ -158,10 +149,29 @@ async function checkForMatches(io) {
   }
 }
 
-function createRankedRoom() {
+async function createRankedRoom(io) {
   const roomId = id(4);
-  const room = createRoom(roomId);
-  room.isRanked = true; // Mark as ranked room
+  
+  // Use GameEngine system instead of old createRoom
+  const { getOrCreateEngine } = await import('./new/GameEngineAdapter.js');
+  const engine = getOrCreateEngine(roomId);
+  
+  // Set IO for the engine
+  engine.setIO(io);
+  
+  // Store engine reference in mem for compatibility
+  const room = {
+    id: roomId,
+    engine: engine,
+    isRanked: true, // Mark as ranked room
+    // Legacy properties for compatibility
+    phase: 'lobby',
+    currentRound: 1,
+    players: new Map(),
+    timer: null,
+    nextRoundReady: new Set()
+  };
+  
   mem.rooms.set(roomId, room);
   
   return roomId;

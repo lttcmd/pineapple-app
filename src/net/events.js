@@ -4,6 +4,7 @@ export const Events = {
   JOIN_ROOM: "room:join",
   LEAVE_ROOM: "room:leave",
   ROOM_STATE: "room:state",
+  PLAYER_STATE: "player:state",
 
   START_ROUND: "round:start",
   DEAL_BATCH: "round:deal",
@@ -14,6 +15,9 @@ export const Events = {
   REVEAL: "round:reveal",
   NEXT_ROUND_READY_UPDATE: "round:next-ready",
   TIMER_SYNC: "timer:sync",
+  TIMER_START: "timer:start",
+  TIMER_EXPIRED: "timer:expired",
+  TIMER_UPDATE: "timer:update",
 
   // Ranked matchmaking events
   SEARCH_RANKED: "ranked:search",

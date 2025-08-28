@@ -8,7 +8,7 @@ const computeTurnCap = (s) => {
     // In fantasyland, place 13 cards (leaving 1 in hand)
     return 13;
   }
-  return (committedTotal(s.board) === 0 ? 5 : 2);
+  return (s.currentRound === 1 ? 5 : 2);
 };
 
 export const useGame = create((set, get) => ({
@@ -30,6 +30,15 @@ export const useGame = create((set, get) => ({
   reveal: null,                                   // { boards, results } at reveal
   nextRoundReady: new Set(),                     // Set of userIds ready for next round
   inFantasyland: false,                          // Whether current player is in fantasyland
+  
+  // Timer state
+  timer: {
+    isActive: false,
+    phaseType: null, // 'initial-set' | 'round' | 'fantasyland'
+    deadlineEpochMs: null,
+    durationMs: null,
+    progress: 0 // 0-1 for UI animation
+  },
 
   placedCountThisTurn: () => get().staged.placements.length,
   turnCap: () => computeTurnCap(get()),
@@ -89,22 +98,26 @@ export const useGame = create((set, get) => ({
     // auto-discard only after first 5 are committed (i.e., on 3-card turns)
     // No discards in fantasyland mode
     let discard = s.staged.discard;
-    const isThreeCardTurn = committedTotal(s.board) > 0 && s.currentDeal.length === 3;
+    const isThreeCardTurn = s.currentRound > 1 && s.currentDeal.length === 3;
+    console.log(`🎯 MOBILE: commitTurnLocal - isThreeCardTurn:`, isThreeCardTurn, 'currentRound:', s.currentRound, 'currentDeal.length:', s.currentDeal.length, 'inFantasyland:', s.inFantasyland);
     if (isThreeCardTurn && !s.inFantasyland) {
       if (discardOverride) {
         discard = discardOverride;
+        console.log(`🎯 MOBILE: Using discardOverride:`, discardOverride);
       } else {
         const leftover = s.currentDeal.find(c => !stagedCards.includes(c));
         if (leftover) discard = leftover;
+        console.log(`🎯 MOBILE: Auto-calculated leftover:`, leftover);
       }
     }
     // In fantasyland, no discards
     if (s.inFantasyland) {
       discard = null;
     }
+    console.log(`🎯 MOBILE: Final discard value:`, discard);
 
     const committedSet = new Set([...s.board.top, ...s.board.middle, ...s.board.bottom, ...stagedCards]);
-    const nextHand = s.hand.filter(c => !committedSet.has(c) && c !== discard);
+    const nextHand = s.hand.filter(c => !committedSet.has(c) && (discard ? c !== discard : true));
 
     const nextDiscards = discard ? [...s.discards, discard] : s.discards;
 
@@ -112,7 +125,7 @@ export const useGame = create((set, get) => ({
       ...s,
       board: nextBoard,
       hand: nextHand,
-      currentDeal: [],
+      currentDeal: [], // Clear currentDeal after processing
       staged: { placements: [], discard },
       discards: nextDiscards,
     };
@@ -154,12 +167,11 @@ export const useGame = create((set, get) => ({
           // Fantasyland mode: accept all 14 cards
           const normalized = incoming.slice(0, 14);
           
-          // De-dup against anything we already hold
+          // De-dup against board, hand, and staged placements (fantasyland appends to hand)
           const seen = new Set([
             ...s.board.top, ...s.board.middle, ...s.board.bottom,
             ...s.hand,
             ...s.staged.placements.map(p => p.card),
-            ...s.currentDeal,
           ]);
           const deduped = normalized.filter(c => !seen.has(c));
 
@@ -181,19 +193,19 @@ export const useGame = create((set, get) => ({
           
           const normalized = incoming.slice(0, want);
 
-          // De-dup against anything we already hold
+          // De-dup against board and staged placements only (not hand, since we're replacing it)
           const seen = new Set([
             ...s.board.top, ...s.board.middle, ...s.board.bottom,
-            ...s.hand,
             ...s.staged.placements.map(p => p.card),
-            ...s.currentDeal,
           ]);
           const deduped = normalized.filter(c => !seen.has(c));
 
+
+          
           return {
             ...s,
             currentDeal: deduped,                   // strictly 5 or 3, without duplicates
-            hand: [...s.hand, ...deduped],          // append only new cards
+            hand: deduped,                          // replace hand with new cards only
             phase: data.phase ?? s.phase,
             currentRound: round,                    // track current round
             // Keep existing fantasyland status (don't override here)
@@ -271,6 +283,40 @@ export const useGame = create((set, get) => ({
           nextRoundReady: new Set(data?.readyPlayers || []),
         };
 
+      case "timer:start":
+        return {
+          ...s,
+          timer: {
+            isActive: true,
+            phaseType: data?.phaseType || null,
+            deadlineEpochMs: data?.deadlineEpochMs || null,
+            durationMs: data?.durationMs || null,
+            progress: 0
+          }
+        };
+
+      case "timer:expired":
+        return {
+          ...s,
+          timer: {
+            isActive: false,
+            phaseType: null,
+            deadlineEpochMs: null,
+            durationMs: null,
+            progress: 1
+          }
+        };
+
+      case "timer:update":
+        return {
+          ...s,
+          timer: {
+            ...s.timer,
+            progress: data?.progress ?? s.timer.progress,
+            timeLeft: data?.timeLeft ?? s.timer.timeLeft,
+          }
+        };
+
       case "room:state":
         return {
           ...s,
@@ -280,6 +326,27 @@ export const useGame = create((set, get) => ({
           players: Array.isArray(data.players) ? data.players : s.players,
           isRanked: data.isRanked ?? s.isRanked,
         };
+
+      case "player:state":
+        // Update local player state with full board and hand data
+        if (data.userId === s.userId) {
+          return {
+            ...s,
+            board: {
+              top: Array.isArray(data.board?.top) ? data.board.top : s.board.top,
+              middle: Array.isArray(data.board?.middle) ? data.board.middle : s.board.middle,
+              bottom: Array.isArray(data.board?.bottom) ? data.board.bottom : s.board.bottom,
+            },
+            hand: Array.isArray(data.hand) ? data.hand : s.hand,
+            discards: Array.isArray(data.discards) ? data.discards : s.discards,
+            currentDeal: Array.isArray(data.currentDeal) ? data.currentDeal : s.currentDeal,
+            score: data.score ?? s.score,
+            ready: data.ready ?? s.ready,
+            inFantasyland: data.inFantasyland ?? s.inFantasyland,
+            roundComplete: data.roundComplete ?? s.roundComplete,
+          };
+        }
+        return s;
 
       case "round:end":
         return { ...s, phase: "idle" };

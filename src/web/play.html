@@ -44,7 +44,27 @@
     .card.clubs    { color: #66d06f; }
     .card.spades   { color: #e7e8ea; }
 
-
+    /* Timer bar */
+    .timer-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 4px;
+      background: #2a3244;
+      z-index: 1000;
+    }
+    .timer-bar-fill {
+      height: 100%;
+      background: #7ee787;
+      transition: width 0.1s ease, background-color 0.1s ease;
+    }
+    .timer-bar-fill.warning {
+      background: #ffb86b;
+    }
+    .timer-bar-fill.danger {
+      background: #ff4444;
+    }
 
     /* Right column */
     #log { white-space:pre-wrap; background:#0b0e17; border:1px solid #2a3244; border-radius:10px; padding:10px; min-height:120px; color:#b9f6ca; }
@@ -62,8 +82,13 @@
     <span>Room:</span> <span id="roomPill" class="pill">—</span>
     <span>Phase:</span> <span id="phase" class="pill">—</span>
     <span>Round:</span> <span id="currentRound" class="pill">—</span>
-    <button id="start">Start Round</button>
-    <button id="ready" disabled>Send Batch + Ready</button>
+    <span>Timer:</span> <span id="timer" class="pill">—</span>
+    <button id="ready" disabled>Ready</button>
+  </div>
+
+  <!-- Timer bar -->
+  <div class="timer-bar">
+    <div class="timer-bar-fill" id="timerBarFill"></div>
   </div>
 
   <div class="grid">
@@ -147,9 +172,11 @@
     // --- state
     let socket = null, myUserId = null;
     let currentPhase = 'lobby';
+    let currentRound = 1; // Track current round for ready button logic
     let myHand = [], myBoard = { top:[], middle:[], bottom:[] }, myDiscards = [];
     let staged = { placements:[], discard:null };
     let lastBatch = [];
+    let myFantasyland = false; // Track if current player is in fantasyland
     const totals = new Map();
     const nextRoundReady = new Set(); // Set of userIds ready for next round
     let roomState = null; // Store full room state for player info
@@ -196,7 +223,9 @@
       renderRow('zoneBottom', myBoard.bottom, getStagedByRow('bottom'));
       const dc = $('discardCommitted'); dc.innerHTML=''; myDiscards.forEach(c => dc.appendChild(cardEl(c, false, 'discard')));
       const ds = $('discardStaged'); ds.innerHTML=''; if (staged.discard) ds.appendChild(cardEl(staged.discard, false, 'staged-discard'));
-      $('ready').disabled = !canSet();
+      const canSetResult = canSet();
+      console.log("🎯 WEB APP: Setting ready button disabled =", !canSetResult);
+      $('ready').disabled = !canSetResult;
     }
 
     // drop targets
@@ -291,31 +320,16 @@
     }
     ['zoneTop','zoneMiddle','zoneBottom','zoneDiscard'].forEach(installDrop);
 
-    // batch validity
+    // batch validity - exactly like mobile app
     function canSet(){
-      if (currentPhase === 'initial-set') {
-        // must place all 5 dealt initially → we simply require empty hand after first deal
-        // but safer: allow if no cards from first batch remain in hand
-        return myHand.length === 0 || (myBoard.top.length + myBoard.middle.length + myBoard.bottom.length) >= 5;
-      }
-      if (currentPhase === 'round') {
-        // Check if this is fantasyland mode (14 cards in lastBatch)
-        if (lastBatch.length === 14) {
-          // Fantasyland mode: must place all 14 cards, no discards
-          return myHand.length === 0;
-        }
-        
-        // Check if this is round 1 (5 cards) or other rounds (3 cards)
-        if (lastBatch.length === 5) {
-          // Round 1: must place all 5 cards, no discard
-          return myHand.length === 0;
-        } else if (lastBatch.length === 3) {
-          // Rounds 2-5: must place exactly 2 of the 3 cards
-          const placedFromBatch = staged.placements.filter(p => lastBatch.includes(p.card)).length;
-          return placedFromBatch === 2; // discard auto if missing
-        }
-      }
-      return false;
+      // Calculate needed cards like mobile app
+      const needed = myFantasyland ? 13 : (currentRound === 1 ? 5 : 2);
+      const stagedCount = staged.placements.length;
+      const canPress = stagedCount === needed;
+      
+      console.log("🎯 WEB APP: canSet() called - myFantasyland:", myFantasyland, "currentRound:", currentRound, "needed:", needed, "stagedCount:", stagedCount, "canPress:", canPress, "staged.placements:", staged.placements);
+      
+      return canPress;
     }
     
     // fantasyland validity - must place all 14 cards
@@ -328,52 +342,33 @@
     }
 
     // buttons
-    $('start').onclick = () => {
-      socket.emit("round:start", { roomId });
-    };
  $('ready').onclick = () => {
+  console.log("🎯 WEB APP: Ready button clicked!");
   if (!socket) return alert('Connect first');
 
-  if (currentPhase === 'round') {
-    // Check if this is fantasyland mode (14 cards in lastBatch)
-    if (lastBatch.length === 14) {
-      // Fantasyland mode: must place all 14 cards, no discards
-      if (myHand.length > 0) {
-        return alert('In Fantasy Land, you must place all 14 cards.');
-      }
-      staged.discard = null; // No discard in fantasyland
-    } else if (lastBatch.length === 5) {
-      // Round 1: must place all 5 cards, no discard
-      if (myHand.length > 0) {
-        return alert('In Round 1, you must place all 5 cards.');
-      }
-      staged.discard = null; // No discard in round 1
-    } else if (lastBatch.length === 3) {
-      // Rounds 2-5: must place exactly 2 of the 3 new cards; leftover auto-discarded
-      const placedFromBatch = staged.placements
-        .filter(p => lastBatch.includes(p.card))
-        .map(p => p.card);
-
-      if (!staged.discard) {
-        const leftover = lastBatch.filter(c => !placedFromBatch.includes(c));
-        if (leftover.length !== 1) {
-          return alert('Place exactly 2 of the 3 new cards.');
-        }
-        const toDiscard = leftover[0];
-        const idx = myHand.indexOf(toDiscard);
-        if (idx !== -1) myHand.splice(idx, 1);
-        staged.discard = toDiscard;
-      }
-    }
+  // Auto-discard logic exactly like mobile app
+  const placedSet = new Set(staged.placements.map(p => p.card));
+  let leftover = null;
+  if (!myFantasyland) {
+    // Normal mode: auto-discard leftover card
+    leftover = (myHand || []).find(c => !placedSet.has(c)) || null;
+    console.log("🎯 WEB APP: onCommit - hand:", myHand, "placedSet:", Array.from(placedSet), "leftover:", leftover);
+  } else {
+    // Fantasyland mode: auto-discard leftover card (1 card should be discarded)
+    leftover = (myHand || []).find(c => !placedSet.has(c)) || null;
+    console.log("🎯 WEB APP: onCommit - fantasyland hand:", myHand, "placedSet:", Array.from(placedSet), "leftover:", leftover);
   }
 
   // send to server
-  socket.emit("action:ready", {
+  const readyData = {
     roomId,
     placements: staged.placements,
-    discard: staged.discard,
+    discard: leftover || undefined,
     userId: myUserId
-  });
+  };
+  console.log("🎯 WEB APP: Emitting action:ready with data:", readyData);
+  console.log("🎯 WEB APP: onCommit - myFantasyland:", myFantasyland, "leftover:", leftover, "final discard value:", readyData.discard);
+  socket.emit("action:ready", readyData);
 
   // optimistic commit
   for (const p of staged.placements) myBoard[p.row].push(p.card);
@@ -395,7 +390,8 @@
       const playerInfo = $('playerInfo');
       playerInfo.innerHTML = '';
       
-      Object.values(roomState.players).forEach(player => {
+      // Handle both old and new player data structures
+      roomState.players.forEach(player => {
         const playerDiv = document.createElement('div');
         playerDiv.style.marginBottom = '8px';
         playerDiv.style.padding = '6px';
@@ -412,10 +408,29 @@
         infoSpan.style.color = '#9aa3b2';
         infoSpan.style.fontSize = '12px';
         
+        // Handle new GameEngine player structure
         if (isRanked && player.tableChips !== undefined) {
           infoSpan.textContent = `${player.tableChips} chips`;
         } else {
           infoSpan.textContent = `Score: ${player.score || 0}`;
+        }
+        
+        // Add ready status indicator
+        if (player.ready) {
+          const readySpan = document.createElement('div');
+          readySpan.style.color = '#4ade80';
+          readySpan.style.fontSize = '10px';
+          readySpan.textContent = '✓ Ready';
+          playerDiv.appendChild(readySpan);
+        }
+        
+        // Add fantasyland indicator
+        if (player.inFantasyland) {
+          const fantasySpan = document.createElement('div');
+          fantasySpan.style.color = '#fbbf24';
+          fantasySpan.style.fontSize = '10px';
+          fantasySpan.textContent = '🌟 Fantasyland';
+          playerDiv.appendChild(fantasySpan);
         }
         
         playerDiv.appendChild(nameSpan);
@@ -565,9 +580,26 @@
       log("STATE\n"+JSON.stringify(s,null,2)); 
       updateStartButton();
     });
+    
+    socket.on("player:state", (data) => {
+      console.log("🎯 WEB APP: Received player:state event:", data);
+      if (data.userId === myUserId) {
+        // Update local player state
+        myBoard = data.board;
+        myHand = data.hand;
+        myDiscards = data.discards;
+        
+        // Update UI
+        renderHand();
+        refreshBoard();
+        
+        log(`Player state updated: Hand(${myHand.length}), Board(T:${myBoard.top.length},M:${myBoard.middle.length},B:${myBoard.bottom.length})`);
+      }
+    });
     socket.on("round:start", ({round})=>{
       console.log("Round start:", round);
       myBoard={top:[],middle:[],bottom:[]}; myDiscards=[]; staged={placements:[],discard:null}; lastBatch=[];
+      myFantasyland = false; // Reset fantasyland status
       $('revealPanel').textContent='—'; renderHand(); refreshBoard(); log("START round "+round);
       // Reset next round ready state
       nextRoundReady.clear();
@@ -577,12 +609,14 @@
       console.log("🎯 WEB APP: Received round:deal event:", {cards, fantasyland, round});
       lastBatch = cards.slice(); 
       myHand = myHand.concat(cards); 
+      myFantasyland = fantasyland; // Store fantasyland status
+      currentRound = round; // Update current round for canSet() function
       renderHand();
       
       if (fantasyland) {
         // Fantasyland mode: 14 cards, no discard button, 2 rows of 7 cards
         log("FANTASY LAND MODE: 14 cards dealt");
-        $('ready').disabled = !canSetFantasyland();
+        $('ready').disabled = !canSet();
         
         // Hide discard zone for fantasyland
         $('zoneDiscard').style.display = 'none';
@@ -597,12 +631,16 @@
         if (round === 1) {
           // Round 1: 5 cards, must place all 5
           log("ROUND 1: 5 cards dealt, must place all");
-          $('ready').disabled = !canSet();
+          const canSetResult1 = canSet();
+          console.log("🎯 WEB APP: Round 1 - Setting ready button disabled =", !canSetResult1);
+          $('ready').disabled = !canSetResult1;
           $('zoneDiscard').style.display = 'none'; // No discard in round 1
         } else {
           // Rounds 2-5: 3 cards, place 2 discard 1
           log(`ROUND ${round}: 3 cards dealt, place 2 discard 1`);
-          $('ready').disabled = !canSet();
+          const canSetResult2 = canSet();
+          console.log("🎯 WEB APP: Round", round, "- Setting ready button disabled =", !canSetResult2);
+          $('ready').disabled = !canSetResult2;
           $('zoneDiscard').style.display = 'block';
         }
       }
@@ -627,6 +665,22 @@
       updateStartButton();
       log("Next round ready update: " + [...nextRoundReady].join(', '));
     });
+    
+    // Timer events
+    socket.on("timer:start", (timerInfo) => {
+      console.log("🎯 WEB APP: Timer started:", timerInfo);
+      log(`Timer started: ${timerInfo.durationMs}ms`);
+    });
+    
+    socket.on("timer:expired", () => {
+      console.log("🎯 WEB APP: Timer expired");
+      log("Timer expired - auto-placing cards");
+    });
+    
+    socket.on("timer:update", (timerInfo) => {
+      console.log("🎯 WEB APP: Timer update:", timerInfo);
+      // Update timer display if needed
+    });
 
     // Function to update start button text and state
     function updateStartButton() {
@@ -640,13 +694,8 @@
           startBtn.disabled = false;
         }
       } else if (currentPhase === 'reveal') {
-        if (nextRoundReady.has(myUserId)) {
-          startBtn.textContent = 'Waiting for opponent...';
-          startBtn.disabled = true;
-        } else {
-          startBtn.textContent = 'Next Round';
-          startBtn.disabled = false;
-        }
+        startBtn.textContent = 'Reveal';
+        startBtn.disabled = true;
       } else {
         startBtn.textContent = 'Start Round';
         startBtn.disabled = false;
@@ -701,6 +750,94 @@
       }
     });
 
+
+    // Timer handling
+    let timerInterval = null;
+    let timerDeadline = null;
+    let timerDuration = null;
+    let timerPhaseType = null;
+
+    socket.on("timer:start", (data) => {
+      console.log("🎯 WEB APP: Timer started:", data);
+      timerDeadline = data.deadlineEpochMs;
+      timerDuration = data.durationMs;
+      timerPhaseType = data.phaseType;
+      
+      // Clear any existing timer
+      if (timerInterval) {
+        clearInterval(timerInterval);
+      }
+      
+      // Start timer countdown
+      timerInterval = setInterval(() => {
+        updateTimerDisplay();
+      }, 100); // Update every 100ms for smooth countdown
+      
+      updateTimerDisplay();
+      log(`⏰ Timer started: ${timerPhaseType} (${Math.round(timerDuration/1000)}s)`);
+    });
+
+    socket.on("timer:expired", (data) => {
+      console.log("🎯 WEB APP: Timer expired:", data);
+      
+      // Clear timer
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+      
+      timerDeadline = null;
+      timerDuration = null;
+      timerPhaseType = null;
+      
+      updateTimerDisplay();
+      log("⏰ Timer expired!");
+    });
+
+    function updateTimerDisplay() {
+      const timerElement = $('timer');
+      const timerBarFill = $('timerBarFill');
+      
+      if (!timerDeadline) {
+        timerElement.textContent = '—';
+        timerBarFill.style.width = '0%';
+        timerBarFill.className = 'timer-bar-fill';
+        return;
+      }
+      
+      const now = Date.now();
+      const remaining = Math.max(0, timerDeadline - now);
+      const seconds = Math.ceil(remaining / 1000);
+      
+      // Calculate progress (0.0 to 1.0)
+      const progress = Math.max(0, Math.min(1, remaining / timerDuration));
+      const progressPercent = (progress * 100) + '%';
+      
+      // Color coding based on remaining time
+      let color = '#7ee787'; // Green (default)
+      let barClass = '';
+      
+      if (remaining <= timerDuration * 0.25) {
+        color = '#ff4444'; // Red (25% or less)
+        barClass = 'danger';
+      } else if (remaining <= timerDuration * 0.5) {
+        color = '#ffb86b'; // Yellow (50% or less)
+        barClass = 'warning';
+      }
+      
+      timerElement.textContent = `${seconds}s`;
+      timerElement.style.color = color;
+      
+      // Update timer bar
+      timerBarFill.style.width = progressPercent;
+      timerBarFill.className = `timer-bar-fill ${barClass}`;
+      
+      // Stop timer if expired
+      if (remaining <= 0 && timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+    }
 
     socket.on("error:msg", (e)=> log("ERROR "+e.message));
   </script>

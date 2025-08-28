@@ -143,32 +143,11 @@ function getFoulTransform(index) {
   };
 }
 
-// Rainbow glow effect for Fantasy Land
-function useRainbowGlow() {
-  const animatedValue = useRef(new Animated.Value(0)).current;
-  
-  useEffect(() => {
-    const animation = Animated.loop(
-      Animated.timing(animatedValue, {
-        toValue: 1,
-        duration: 2000,
-        useNativeDriver: false,
-      })
-    );
-    animation.start();
-    
-    return () => animation.stop();
-  }, [animatedValue]);
-  
-  const rainbowColor = animatedValue.interpolate({
-    inputRange: [0, 0.16, 0.33, 0.5, 0.66, 0.83, 1],
-    outputRange: ['#ff0000', '#ff8000', '#ffff00', '#00ff00', '#0080ff', '#8000ff', '#ff0000'],
-  });
-  
-  return rainbowColor;
-}
 
-function NameWithScore({ name, score, delta, tableChips, isRanked, scoreDetail, isPlayer, animationStep = 0 }) {
+
+
+
+function NameWithScore({ name, score, delta, tableChips, isRanked, scoreDetail, isPlayer, animationStep = 0, inFantasyland = false }) {
   // Calculate point difference for this player
   let pointDelta = null;
   if (scoreDetail && isPlayer !== undefined) {
@@ -189,6 +168,7 @@ function NameWithScore({ name, score, delta, tableChips, isRanked, scoreDetail, 
     
     return (
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 4, position: 'relative' }}>
+        {inFantasyland && <Text style={{ fontSize: responsive.LARGE_FONT_SIZE, marginRight: 4 }}>🌈</Text>}
         <Text style={{ color: colors.text, fontWeight: '700', fontSize: responsive.LARGE_FONT_SIZE, marginRight: 8 }}>{name}</Text>
         <Text style={{ color: colors.sub, fontSize: responsive.BASE_FONT_SIZE }}>
           {chipText} 
@@ -236,6 +216,7 @@ function NameWithScore({ name, score, delta, tableChips, isRanked, scoreDetail, 
     
     return (
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 4, position: 'relative' }}>
+        {inFantasyland && <Text style={{ fontSize: responsive.LARGE_FONT_SIZE, marginRight: 4 }}>🌈</Text>}
         <Text style={{ color: colors.text, fontWeight: '700', fontSize: responsive.LARGE_FONT_SIZE, marginRight: 8 }}>{name}</Text>
         <Text style={{ color: colors.sub, fontSize: responsive.BASE_FONT_SIZE }}>
           {score ?? 0} {deltaText ? <Text style={{ color: deltaColor }}> {deltaText}</Text> : null}
@@ -245,9 +226,82 @@ function NameWithScore({ name, score, delta, tableChips, isRanked, scoreDetail, 
   }
 }
 
+// Timer Bar Component
+function TimerBar({ timer, responsive }) {
+  const [progress, setProgress] = useState(0);
+  const animatedWidth = useRef(new Animated.Value(0)).current;
+  
+  useEffect(() => {
+    if (timer.isActive && timer.deadlineEpochMs) {
+      const updateProgress = () => {
+        const now = Date.now();
+        const elapsed = now - (timer.deadlineEpochMs - timer.durationMs);
+        const newProgress = Math.min(1, Math.max(0, elapsed / timer.durationMs));
+        setProgress(newProgress);
+        
+        // Animate the width
+        Animated.timing(animatedWidth, {
+          toValue: newProgress,
+          duration: 100, // Smooth animation
+          useNativeDriver: false,
+        }).start();
+      };
+      
+      // Update immediately
+      updateProgress();
+      
+      // Update every 100ms for smooth animation
+      const interval = setInterval(updateProgress, 100);
+      
+      return () => clearInterval(interval);
+    } else {
+      // Reset when timer is not active
+      setProgress(0);
+      Animated.timing(animatedWidth, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: false,
+      }).start();
+    }
+  }, [timer.isActive, timer.deadlineEpochMs, timer.durationMs]);
+  
+  // Don't render if timer is not active
+  if (!timer.isActive) return null;
+  
+  // Calculate color based on progress
+  const getTimerColor = () => {
+    if (progress > 0.25) return '#FFD700'; // Yellow (100-25%)
+    return '#FF4444'; // Red (25-0%)
+  };
+  
+  return (
+    <View style={{
+      position: 'absolute',
+      bottom: 0,
+      left: 0,
+      right: 0,
+      height: 4,
+      backgroundColor: 'rgba(0,0,0,0.1)',
+      zIndex: 1000,
+    }}>
+      <Animated.View style={{
+        position: 'absolute',
+        top: 0,
+        right: 0,
+        height: '100%',
+        width: animatedWidth.interpolate({
+          inputRange: [0, 1],
+          outputRange: ['0%', '100%'],
+        }),
+        backgroundColor: getTimerColor(),
+        borderRadius: 2,
+      }} />
+    </View>
+  );
+}
+
 function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onMidLayout, onBotLayout, topAnchorRef, midAnchorRef, botAnchorRef, isFouled, inFantasyland, responsive, showScore = false, scoreDetail = null }) {
   const tiny = true;
-  const rainbowColor = useRainbowGlow();
   
   // Responsive opponent card dimensions (using opponent-specific sizing)
   const oppCardWidth = responsive.OPPONENT_SLOT_W;
@@ -260,15 +314,7 @@ function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onM
         flexDirection: "row", 
         alignSelf: "center", 
         marginBottom: responsive.OPPONENT_ROW_GAP, 
-        position: 'relative',
-        // Rainbow glow for Fantasy Land
-        ...(inFantasyland && {
-          shadowColor: rainbowColor,
-          shadowOffset: { width: 0, height: 0 },
-          shadowOpacity: 0.8,
-          shadowRadius: 8,
-          elevation: 8,
-        })
+        position: 'relative'
       }}>
         <View ref={topAnchorRef} pointerEvents="none" style={{ position: 'absolute', top: 0, right: 0, width: 1, height: 1 }} />
         {Array.from({ length: 3 }).map((_, i) => {
@@ -281,7 +327,7 @@ function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onM
                   height: oppCardHeight, 
                   borderRadius: 6, 
                   borderWidth: 1.5, 
-                  borderColor: inFantasyland ? rainbowColor : colors.outline, 
+                  borderColor: colors.outline, 
                   backgroundColor: colors.panel2 
                 }} />
               ) : (
@@ -299,15 +345,7 @@ function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onM
         flexDirection: "row", 
         alignSelf: "center", 
         marginBottom: responsive.OPPONENT_ROW_GAP, 
-        position: 'relative',
-        // Rainbow glow for Fantasy Land
-        ...(inFantasyland && {
-          shadowColor: rainbowColor,
-          shadowOffset: { width: 0, height: 0 },
-          shadowOpacity: 0.8,
-          shadowRadius: 8,
-          elevation: 8,
-        })
+        position: 'relative'
       }}>
         <View ref={midAnchorRef} pointerEvents="none" style={{ position: 'absolute', top: 0, right: 0, width: 1, height: 1 }} />
         {Array.from({ length: 5 }).map((_, i) => {
@@ -320,7 +358,7 @@ function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onM
                   height: oppCardHeight, 
                   borderRadius: 6, 
                   borderWidth: 1.5, 
-                  borderColor: inFantasyland ? rainbowColor : colors.outline, 
+                  borderColor: colors.outline, 
                   backgroundColor: colors.panel2 
                 }} />
               ) : (
@@ -338,15 +376,7 @@ function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onM
         flexDirection: "row", 
         alignSelf: "center", 
         marginBottom: responsive.OPPONENT_ROW_GAP, 
-        position: 'relative',
-        // Rainbow glow for Fantasy Land
-        ...(inFantasyland && {
-          shadowColor: rainbowColor,
-          shadowOffset: { width: 0, height: 0 },
-          shadowOpacity: 0.8,
-          shadowRadius: 8,
-          elevation: 8,
-        })
+        position: 'relative'
       }}>
         <View ref={botAnchorRef} pointerEvents="none" style={{ position: 'absolute', top: 0, right: 0, width: 1, height: 1 }} />
         {Array.from({ length: 5 }).map((_, i) => {
@@ -359,7 +389,7 @@ function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onM
                   height: oppCardHeight, 
                   borderRadius: 6, 
                   borderWidth: 1.5, 
-                  borderColor: inFantasyland ? rainbowColor : colors.outline, 
+                  borderColor: colors.outline, 
                   backgroundColor: colors.panel2 
                 }} />
               ) : (
@@ -508,6 +538,7 @@ function AnimatedChipCounter({ startValue, endValue, isAnimating, responsive, is
 
 export default function Play({ route }) {
   const { roomId } = route.params || {};
+  console.log("🎯 MOBILE: Play screen loaded with roomId:", roomId, "route.params:", route.params);
   
   // Handle screen size changes and orientation changes
   const [dimensions, setDimensions] = useState(Dimensions.get('window'));
@@ -636,6 +667,7 @@ export default function Play({ route }) {
   const currentRound = useGame(state => state.currentRound);
   const handNumber = useGame(state => state.round);
   const isRanked = useGame(state => state.isRanked);
+  const timer = useGame(state => state.timer);
   
   // Get functions that don't change
   const { applyEvent, setPlacement, unstage, commitTurnLocal } = useGame();
@@ -700,6 +732,8 @@ export default function Play({ route }) {
   const onOTopLayout = () => measureAnchor(oTopAnchorRef, 'top', setOppAnchors);
   const onOMidLayout = () => measureAnchor(oMidAnchorRef, 'middle', setOppAnchors);
   const onOBotLayout = () => measureAnchor(oBotAnchorRef, 'bottom', setOppAnchors);
+
+
 
 
 
@@ -996,19 +1030,37 @@ export default function Play({ route }) {
   };
 
   const onCommit = () => {
-    if (!canCommit) return;
+    console.log("🎯 MOBILE: Ready button clicked!");
+    if (!canCommit) {
+      console.log("🎯 MOBILE: Cannot commit - canCommit is false");
+      return;
+    }
     const state = useGame.getState();
-    const { currentDeal, userId, inFantasyland } = state;
+    const { currentDeal, hand, userId, inFantasyland } = state;
+    console.log("🎯 MOBILE: onCommit - state.currentDeal:", currentDeal, "state.hand:", hand);
     const placedSet = new Set(staged.placements.map(p => p.card));
     
     let leftover = null;
     if (!inFantasyland) {
       // Normal mode: auto-discard leftover card
-      leftover = (currentDeal || []).find(c => !placedSet.has(c)) || null;
+      // Use hand instead of currentDeal since that's where the cards actually are
+      leftover = (hand || []).find(c => !placedSet.has(c)) || null;
+      console.log("🎯 MOBILE: onCommit - hand:", hand, "placedSet:", Array.from(placedSet), "leftover:", leftover);
+    } else {
+      // Fantasyland mode: auto-discard leftover card (1 card should be discarded)
+      leftover = (hand || []).find(c => !placedSet.has(c)) || null;
+      console.log("🎯 MOBILE: onCommit - fantasyland hand:", hand, "placedSet:", Array.from(placedSet), "leftover:", leftover);
     }
-    // In fantasyland mode: no discards (1 card stays in hand)
 
-    emit("action:ready", { roomId, placements: staged.placements, discard: inFantasyland ? undefined : (leftover || undefined), userId });
+    const gameState = useGame.getState();
+    const gameRoomId = gameState.roomId;
+    console.log("🎯 MOBILE: Using roomId from route:", roomId, "from game state:", gameRoomId);
+    const finalRoomId = gameRoomId || roomId;
+    const readyData = { roomId: finalRoomId, placements: staged.placements, discard: leftover || undefined, userId };
+    console.log("🎯 MOBILE: Emitting action:ready with data:", readyData);
+    console.log("🎯 MOBILE: onCommit - inFantasyland:", inFantasyland, "leftover:", leftover, "final discard value:", readyData.discard);
+    console.log("🎯 MOBILE: roomId value:", roomId, "type:", typeof roomId);
+    emit("action:ready", readyData);
     playSfx('commit');
     commitTurnLocal(leftover);
     
@@ -1025,20 +1077,9 @@ export default function Play({ route }) {
   // Handle server timer updates
   useEffect(() => {
     const off = onSocketEvent((evt, data) => {
-      if (evt === "timer:update") {
-        setServerTimeLeft(data.timeLeft);
-        setIsTimerActive(data.isActive);
-      }
-      if (evt === "timer:start") {
-        // Store the total duration when timer starts
-        const duration = data.timeLeft || (TIMER_DURATION * 1000);
-        setTotalTimerDuration(duration);
-        setServerTimeLeft(duration);
-        setIsTimerActive(true);
-        setReadyPlayers(new Set());
-      }
-      if (evt === "timer:stop") {
-        setIsTimerActive(false);
+      // Handle timer events through useGame store
+      if (evt === "timer:start" || evt === "timer:expired") {
+        applyEvent(evt, data);
       }
     });
     return () => off();
@@ -1051,7 +1092,8 @@ export default function Play({ route }) {
 
 
 
-  const needed = inFantasyland ? 13 : (committedTotal(board) === 0 ? 5 : 2);
+  // Determine how many cards are needed based on the current round
+  const needed = inFantasyland ? 13 : (currentRound === 1 ? 5 : 2);
   const stagedCount = staged.placements.length;
   const canPress = stagedCount === needed;
   
@@ -1076,19 +1118,33 @@ export default function Play({ route }) {
       }}>
         <Text style={{ 
           color: colors.sub, 
-          fontSize: currentResponsive.BASE_FONT_SIZE,
+          fontSize: currentResponsive.SMALL_FONT_SIZE,
           fontWeight: '600'
         }}>
           Hand #{handNumber || 1}
         </Text>
-        <Text style={{ 
-          color: colors.sub, 
-          fontSize: currentResponsive.SMALL_FONT_SIZE,
-          fontWeight: '400',
+        <View style={{ 
+          flexDirection: 'row', 
+          alignItems: 'center', 
+          justifyContent: 'center',
           marginTop: 2
         }}>
-          1 point = 10 chips
-        </Text>
+          <Text style={{ 
+            color: colors.sub, 
+            fontSize: currentResponsive.SMALL_FONT_SIZE * 0.8,
+            fontWeight: '400'
+          }}>
+            1 point = 10 
+          </Text>
+          <Image 
+            source={require('../../assets/images/chips.png')} 
+            style={{ 
+              width: currentResponsive.SMALL_FONT_SIZE * 0.8 * 1.2, 
+              height: currentResponsive.SMALL_FONT_SIZE * 0.8 * 1.2,
+              marginLeft: 2
+            }} 
+          />
+        </View>
       </View>
       
       {/* Test Reveal Button - Top Right */}
@@ -1113,6 +1169,8 @@ export default function Play({ route }) {
           Test Reveal
         </Text>
       </Pressable>
+
+
       {/* Opponent area - responsive height */}
       <View style={{ 
         height: currentResponsive.SECTION_SPACING * 3.5, // Increased height to accommodate name and board
@@ -1123,14 +1181,24 @@ export default function Play({ route }) {
         {others[0] ? (
           <View style={{ alignItems: "center" }}>
             {/* Opponent Name - centered over board */}
-            <Text style={{ 
-              color: colors.text, 
-              fontWeight: '700', 
-              fontSize: currentResponsive.LARGE_FONT_SIZE, 
-              marginBottom: 8 
-            }}>
-              {others[0].name}
-            </Text>
+            <View style={{ alignItems: 'center', justifyContent: 'center', marginBottom: 8, position: 'relative' }}>
+              {others[0]?.inFantasyland && (
+                <Text style={{ 
+                  position: 'absolute', 
+                  left: '-15%', 
+                  fontSize: currentResponsive.LARGE_FONT_SIZE 
+                }}>
+                  🌈
+                </Text>
+              )}
+              <Text style={{ 
+                color: colors.text, 
+                fontWeight: '700', 
+                fontSize: currentResponsive.LARGE_FONT_SIZE
+              }}>
+                {others[0].name}
+              </Text>
+            </View>
             
             {/* Opponent Chip Stack - underneath name */}
             <View style={{ 
@@ -1213,15 +1281,24 @@ export default function Play({ route }) {
       }}>
                   <View style={{ alignSelf: "center", marginBottom: currentResponsive.SECTION_SPACING * 0.15 }}>
             {/* Player Name - centered over board */}
-            <Text style={{ 
-              color: colors.text, 
-              fontWeight: '700', 
-              fontSize: currentResponsive.LARGE_FONT_SIZE, 
-              marginBottom: 8,
-              textAlign: 'center'
-            }}>
-              {me.name || 'You'}
-            </Text>
+            <View style={{ alignItems: 'center', justifyContent: 'center', marginBottom: 8, position: 'relative' }}>
+              {inFantasyland && (
+                <Text style={{ 
+                  position: 'absolute', 
+                  left: '+5%', 
+                  fontSize: currentResponsive.LARGE_FONT_SIZE 
+                }}>
+                  🌈
+                </Text>
+              )}
+              <Text style={{ 
+                color: colors.text, 
+                fontWeight: '700', 
+                fontSize: currentResponsive.LARGE_FONT_SIZE
+              }}>
+                {me.name || 'You'}
+              </Text>
+            </View>
             
             {/* Player Chip Stack - underneath name */}
             <View style={{ 
@@ -1444,36 +1521,8 @@ export default function Play({ route }) {
             </Pressable>
           )}
 
-          {/* Center: NEXT ROUND button (only when reveal is active) */}
-          {reveal ? (
-            <Pressable
-              onPress={() => {
-                emit("round:start", { roomId });
-              }}
-              disabled={nextRoundReady.has(meId)}
-              style={{
-                paddingVertical: currentResponsive.BUTTON_PADDING_V,
-                paddingHorizontal: currentResponsive.BUTTON_PADDING_H,
-                borderRadius: currentResponsive.CONTROL_BUTTON_RADIUS,
-                backgroundColor: nextRoundReady.has(meId) ? colors.outline : "#2e7d32",
-                borderWidth: nextRoundReady.has(meId) ? 1 : 0,
-                borderColor: colors.outline,
-                minWidth: currentResponsive.CONTROL_BUTTON_SIZE * 2.5,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Text style={{ 
-                color: nextRoundReady.has(meId) ? colors.sub : "#fff", 
-                fontSize: currentResponsive.CONTROL_TEXT_SIZE, 
-                fontWeight: "600" 
-              }}>
-                {nextRoundReady.has(meId) ? "WAITING..." : "NEXT ROUND"}
-              </Text>
-            </Pressable>
-          ) : (
-            <View style={{ width: currentResponsive.CONTROL_BUTTON_SIZE * 2.5 }} />
-          )}
+          {/* Center: Empty space (reveal timer uses bottom bar) */}
+          <View style={{ width: currentResponsive.CONTROL_BUTTON_SIZE * 2.5 }} />
 
           {/* Right: Ready/Set button */}
           <Pressable
@@ -1574,6 +1623,9 @@ export default function Play({ route }) {
         detail={scoreDetail}
         animationStep={scoreAnimationStep}
       />
+      
+      {/* Timer Bar */}
+      <TimerBar timer={timer} responsive={currentResponsive} />
     </View>
   );
 }
@@ -1602,7 +1654,7 @@ function Row({
   const stagedCount = staged.length;
   const remaining = Math.max(0, capacity - committedCount - stagedCount);
   const gap = compact ? (responsive.isSmallDevice ? 1 : 2) : responsive.SLOT_GAP;
-  const rainbowColor = useRainbowGlow();
+
 
 
 
@@ -1625,15 +1677,7 @@ function Row({
           borderRadius: 8,
           borderWidth: highlightRow ? 2 : 0,
           borderColor: highlightRow ? colors.accent : "transparent",
-          position: 'relative',
-          // Rainbow glow for Fantasy Land
-          ...(inFantasyland && {
-            shadowColor: rainbowColor,
-            shadowOffset: { width: 0, height: 0 },
-            shadowOpacity: 0.8,
-            shadowRadius: 8,
-            elevation: 8,
-          })
+          position: 'relative'
         }}
       >
         {/* top-right anchor inside player row */}
@@ -1659,7 +1703,7 @@ function Row({
               height: responsive.SLOT_H, // Use responsive player card height
               marginRight: gap,
               borderWidth: responsive.isSmallDevice ? 1.5 : 2,
-              borderColor: inFantasyland ? rainbowColor : (highlightRow ? colors.accent : colors.outline),
+              borderColor: highlightRow ? colors.accent : colors.outline,
               borderRadius: responsive.isSmallDevice ? 8 : 10,
               backgroundColor: "rgba(255,255,255,0.05)",
             }}

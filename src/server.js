@@ -29,51 +29,14 @@ app.use(express.static(webRoot));
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
 // monitoring endpoint
-app.get("/monitor", (_req, res) => {
-  const rooms = {};
-  for (const [roomId, room] of mem.rooms) {
-    rooms[roomId] = {
-      id: room.id,
-      phase: room.phase,
-      round: room.round,
-      roundIndex: room.roundIndex,
-      currentRound: room.currentRound,
-      isRanked: room.isRanked || false,
-      timer: room.timer ? {
-        isActive: room.timer.isActive,
-        timeLeft: room.timer.timeLeft
-      } : {
-        isActive: false,
-        timeLeft: 0
-      },
-      seed: room.seed,
-      sharedDeck: room.sharedDeck,
-      handCards: room.handCards,
-      players: {}
-    };
-    
-    for (const [userId, player] of room.players) {
-      rooms[roomId].players[userId] = {
-        name: player.name,
-        score: player.score || 0,
-        tableChips: player.tableChips || 0,
-        ready: player.ready,
-        roundComplete: player.roundComplete || false,
-        inFantasyland: player.inFantasyland,
-        hasPlayedFantasylandHand: player.hasPlayedFantasylandHand,
-        handCardIndex: player.handCardIndex,
-        hand: player.hand,
-        board: player.board,
-        discards: player.discards,
-        currentDeal: player.currentDeal
-      };
-    }
-  }
+app.get("/monitor", async (_req, res) => {
+  const { getDebugInfo } = await import('./game/new/GameEngineAdapter.js');
+  const debugInfo = getDebugInfo();
   
   res.json({
     timestamp: new Date().toISOString(),
-    activeRooms: mem.rooms.size,
-    rooms
+    activeRooms: Object.keys(debugInfo).length,
+    rooms: debugInfo
   });
 });
 
@@ -94,4 +57,10 @@ server.listen(config.port, async () => {
   
   console.log(`Server listening on :${config.port}`);
   console.log(`Open http://localhost:${config.port}/  → redirects to /auth/phone.html`);
+  
+  // Start timer check interval using new GameEngine system
+  setInterval(async () => {
+    const { checkExpiredTimers } = await import('./game/new/GameEngineAdapter.js');
+    checkExpiredTimers();
+  }, 1000); // Check every second
 });
