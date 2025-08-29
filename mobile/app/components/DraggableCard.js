@@ -60,7 +60,7 @@ export default function DraggableCard({ card, small = false, onMove, onDrop, res
           <View style={{
             width: PLACEHOLDER_W,
             height: PLACEHOLDER_H,
-            borderWidth: 2,
+            borderWidth: 1,
             borderColor: colors.outline,
             borderRadius: 10,
             backgroundColor: "rgba(255,255,255,0.05)",

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { sendOtp, verifyOtp } from "./service.js";
 import { mem } from "../store/mem.js";
-import { setUsername, getUserByUsername, getUserByPhone, setAvatar, getUserChips } from "../store/database.js";
+import { setUsername, getUserByUsername, getUserByPhone, setAvatar, getUserChips, getUserById, getPlayerStats } from "../store/database.js";
 
 export const authRoutes = Router();
 
@@ -80,16 +80,18 @@ authRoutes.get("/me", async (req, res) => {
     const profile = mem.players.get(payload.sub);
     if (!profile) return res.status(404).json({ error: "not found" });
     
-    // Get username, avatar, and chips from database
+    // Get username, avatar, chips, and stats from database
     const dbUser = await getUserByPhone(profile.phone);
     const chips = await getUserChips(payload.dbId);
+    const stats = await getPlayerStats(payload.dbId);
     console.log("Database user found:", dbUser ? `username: ${dbUser.username}, hasAvatar: ${!!dbUser.avatar}, chips: ${chips}` : "not found");
     
     const userProfile = {
       ...profile,
       username: dbUser?.username || null,
       avatar: dbUser?.avatar || null,
-      chips: chips || 1000
+      chips: chips || 1000,
+      stats: stats
     };
     
     console.log("Profile response - username:", userProfile.username, "hasAvatar:", !!userProfile.avatar);
@@ -105,10 +107,19 @@ authRoutes.post("/me/avatar", async (req, res) => {
   const auth = req.headers.authorization || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
   const { avatar } = req.body || {};
-  if (!token) return res.status(401).json({ error: "missing token" });
-  if (!avatar || typeof avatar !== 'string' || avatar.length > 2_000_000) {
+  
+  if (!token) {
+    return res.status(401).json({ error: "missing token" });
+  }
+  
+  if (!avatar || typeof avatar !== 'string') {
     return res.status(400).json({ error: "invalid avatar" });
   }
+  
+  if (avatar.length > 500_000) { // 500KB limit for 250x250 compressed images
+    return res.status(400).json({ error: "avatar too large" });
+  }
+  
   try {
     const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
     const dbId = payload.dbId;
@@ -123,6 +134,40 @@ authRoutes.post("/me/avatar", async (req, res) => {
     res.json({ ok: true });
   } catch (error) {
     console.error('Error updating avatar:', error);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+// Get user info by ID (for opponent avatars)
+authRoutes.get("/user/:userId", async (req, res) => {
+  const auth = req.headers.authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+  const { userId } = req.params;
+  
+  if (!token) return res.status(401).json({ error: "missing token" });
+  if (!userId) return res.status(400).json({ error: "missing user id" });
+  
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+    const dbId = payload.dbId;
+    
+    if (!dbId) {
+      return res.status(400).json({ error: "invalid token" });
+    }
+
+    // Get user info from database
+    const dbUser = await getUserById(userId);
+    if (!dbUser) {
+      return res.status(404).json({ error: "user not found" });
+    }
+
+    // Return only public info (username and avatar)
+    res.json({
+      username: dbUser.username,
+      avatar: dbUser.avatar
+    });
+  } catch (error) {
+    console.error('Error getting user info:', error);
     res.status(500).json({ error: "server error" });
   }
 });

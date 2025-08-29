@@ -216,6 +216,18 @@ export class GameState {
   }
   
   /**
+   * Stop all active timers
+   */
+  stopAllTimers() {
+    console.log(`⏰ TIMER: Stopping all timers for room ${this.roomId}`);
+    for (const [playerId, timer] of this.timers) {
+      timer.stop();
+      console.log(`⏰ TIMER: Stopped timer for player ${playerId}`);
+    }
+    this.timers.clear();
+  }
+  
+  /**
    * Create public room state for clients
    */
   toPublicState() {
@@ -233,6 +245,21 @@ export class GameState {
    * Get debug info
    */
   getDebugInfo() {
+    // Get timer info for the room
+    const timerInfo = {
+      isActive: false,
+      timeLeft: 0
+    };
+    
+    // Check if any player has an active timer
+    for (const [playerId, timer] of this.timers) {
+      if (timer.isActive()) {
+        timerInfo.isActive = true;
+        timerInfo.timeLeft = timer.getTimeLeft();
+        break;
+      }
+    }
+    
     return {
       roomId: this.roomId,
       phase: this.phase,
@@ -240,9 +267,14 @@ export class GameState {
       handNumber: this.handNumber,
       isMixedMode: this.isMixedMode,
       isRanked: this.isRanked,
+      seed: this.seed,
+      handCards: this.handCards,
+      timer: timerInfo,
       players: this.getAllPlayers().map(p => ({
         id: p.id,
+        userId: p.id,
         name: p.name,
+        socketId: p.socketId,
         inFantasyland: p.inFantasyland,
         ready: p.ready,
         roundComplete: p.roundComplete,
@@ -250,7 +282,15 @@ export class GameState {
         currentRound: p.getCurrentRound(),
         isComplete: p.isComplete(),
         hasTimer: this.timers.has(p.id),
-        timerExpired: this.timers.get(p.id)?.isExpired() || false
+        timerExpired: this.timers.get(p.id)?.isExpired() || false,
+        board: p.board,
+        hand: p.hand,
+        discards: p.discards,
+        currentDeal: p.currentDeal,
+        score: p.score,
+        tableChips: p.tableChips,
+        hasPlayedFantasylandHand: p.hasPlayedFantasylandHand,
+        handCardIndex: p.cardsDealt
       }))
     };
   }

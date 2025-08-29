@@ -75,7 +75,7 @@ export class TimerState {
         break;
       case 'initial-set':
       case 'round':
-        durationMs = 10000; // 10 seconds
+        durationMs = 20000; // 20 seconds
         break;
       default:
         throw new Error(`Unknown phase type: ${phaseType}`);

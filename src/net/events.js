@@ -18,6 +18,7 @@ export const Events = {
   TIMER_START: "timer:start",
   TIMER_EXPIRED: "timer:expired",
   TIMER_UPDATE: "timer:update",
+  GAME_END: "game:end",
 
   // Ranked matchmaking events
   SEARCH_RANKED: "ranked:search",

@@ -50,7 +50,7 @@ function Face({ card, selected, small, tiny, micro, responsive }) {
   return (
     <View
       style={{
-        width: w, height: h, borderRadius: 10, borderWidth: 2,
+        width: w, height: h, borderRadius: 10, borderWidth: 1,
         borderColor: selected ? colors.accent : colors.outline,
         backgroundColor: colors.cardFace,
         justifyContent: "space-between", padding: 6,

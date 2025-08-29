@@ -345,6 +345,12 @@
  $('ready').onclick = () => {
   console.log("🎯 WEB APP: Ready button clicked!");
   if (!socket) return alert('Connect first');
+  
+  // Check if we can actually set (validation like mobile app)
+  if (!canSet()) {
+    console.log("🎯 WEB APP: Cannot commit - canSet() is false");
+    return;
+  }
 
   // Auto-discard logic exactly like mobile app
   const placedSet = new Set(staged.placements.map(p => p.card));
@@ -370,17 +376,29 @@
   console.log("🎯 WEB APP: onCommit - myFantasyland:", myFantasyland, "leftover:", leftover, "final discard value:", readyData.discard);
   socket.emit("action:ready", readyData);
 
-  // optimistic commit
+  // optimistic commit - exactly like mobile app
   for (const p of staged.placements) myBoard[p.row].push(p.card);
-  if (staged.discard) myDiscards.push(staged.discard);
+  
+  // Handle discard - exactly like mobile app
+  if (leftover) {
+    myDiscards.push(leftover);
+    // Remove the discarded card from hand
+    const discardIndex = myHand.indexOf(leftover);
+    if (discardIndex !== -1) {
+      myHand.splice(discardIndex, 1);
+    }
+  }
 
   // IMPORTANT: clear the current batch only AFTER committing
   lastBatch = [];
 
-  // reset staging and refresh UI
+  // reset staging and refresh UI - exactly like mobile app
   staged = { placements: [], discard: null };
   renderHand();
   refreshBoard();
+  
+  // Add myself to ready set - exactly like mobile app
+  nextRoundReady.add(myUserId);
 };
 
     // scoreboard / reveal
@@ -497,9 +515,9 @@
         const oppScoop = opp.scoop || 0;
         const oppTotal = oppTop + oppMiddle + oppBottom + oppScoop;
         
-        // Calculate difference and chip conversion
+        // Calculate difference and chip conversion using centralized logic
         const difference = mineTotal - oppTotal;
-        const chipDifference = difference * 10;
+        const chipDifference = difference * 10; // CHIP_CONSTANTS.POINTS_PER_CHIP
         
         const sec=document.createElement('div');
         sec.innerHTML = `

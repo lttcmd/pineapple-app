@@ -40,6 +40,10 @@ export async function initDatabase() {
         username TEXT UNIQUE,
         avatar TEXT,
         chips INTEGER DEFAULT 10000,
+        hands_played INTEGER DEFAULT 0,
+        royalties_total INTEGER DEFAULT 0,
+        fantasy_entrances INTEGER DEFAULT 0,
+        fouls INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -49,10 +53,46 @@ export async function initDatabase() {
         reject(err);
       } else {
         console.log('Database initialized');
+        // Add avatar column to existing tables if it doesn't exist
+        db.run('ALTER TABLE users ADD COLUMN avatar TEXT', (err) => {
+          if (err && !err.message.includes('duplicate column name')) {
+            console.error('Error adding avatar column:', err);
+          } else {
+            console.log('Avatar column added to database');
+          }
+        });
+        
         // Add chips column to existing tables if it doesn't exist
         db.run('ALTER TABLE users ADD COLUMN chips INTEGER DEFAULT 10000', (err) => {
           if (err && !err.message.includes('duplicate column name')) {
             console.error('Error adding chips column:', err);
+          }
+        });
+        
+        // Add stats columns to existing tables if they don't exist
+        db.run('ALTER TABLE users ADD COLUMN hands_played INTEGER DEFAULT 0', (err) => {
+          if (err && !err.message.includes('duplicate column name')) {
+            console.error('Error adding hands_played column:', err);
+          } else {
+            console.log('Stats columns added to database');
+          }
+        });
+        
+        db.run('ALTER TABLE users ADD COLUMN royalties_total INTEGER DEFAULT 0', (err) => {
+          if (err && !err.message.includes('duplicate column name')) {
+            console.error('Error adding royalties_total column:', err);
+          }
+        });
+        
+        db.run('ALTER TABLE users ADD COLUMN fantasy_entrances INTEGER DEFAULT 0', (err) => {
+          if (err && !err.message.includes('duplicate column name')) {
+            console.error('Error adding fantasy_entrances column:', err);
+          }
+        });
+        
+        db.run('ALTER TABLE users ADD COLUMN fouls INTEGER DEFAULT 0', (err) => {
+          if (err && !err.message.includes('duplicate column name')) {
+            console.error('Error adding fouls column:', err);
           }
         });
         
@@ -88,6 +128,15 @@ export async function getUserByUsername(username) {
   });
 }
 
+export async function getUserById(userId) {
+  return new Promise((resolve, reject) => {
+    db.get('SELECT * FROM users WHERE id = ?', [userId], (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+}
+
 export async function createUser(phone) {
   return new Promise((resolve, reject) => {
     db.run('INSERT INTO users (phone) VALUES (?)', [phone], function(err) {
@@ -115,9 +164,63 @@ export async function setAvatar(userId, avatar) {
     db.run(
       'UPDATE users SET avatar = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [avatar, userId],
-      (err) => {
-        if (err) reject(err);
-        else resolve();
+      function(err) {
+        if (err) {
+          console.error("Database error in setAvatar:", err);
+          reject(err);
+        } else {
+          resolve();
+        }
+      }
+    );
+  });
+}
+
+export async function updatePlayerStats(userId, stats) {
+  return new Promise((resolve, reject) => {
+    const { handsPlayed = 0, royaltiesTotal = 0, fantasyEntrances = 0, fouls = 0 } = stats;
+    
+    db.run(
+      `UPDATE users SET 
+        hands_played = hands_played + ?, 
+        royalties_total = royalties_total + ?, 
+        fantasy_entrances = fantasy_entrances + ?, 
+        fouls = fouls + ?,
+        updated_at = CURRENT_TIMESTAMP 
+       WHERE id = ?`,
+      [handsPlayed, royaltiesTotal, fantasyEntrances, fouls, userId],
+      function(err) {
+        if (err) {
+          console.error("Database error in updatePlayerStats:", err);
+          reject(err);
+        } else {
+          console.log(`Updated stats for user ${userId}:`, stats);
+          resolve();
+        }
+      }
+    );
+  });
+}
+
+export async function getPlayerStats(userId) {
+  return new Promise((resolve, reject) => {
+    db.get(
+      'SELECT hands_played, royalties_total, fantasy_entrances, fouls FROM users WHERE id = ?',
+      [userId],
+      (err, row) => {
+        if (err) {
+          console.error("Database error in getPlayerStats:", err);
+          reject(err);
+        } else {
+          const stats = row || { hands_played: 0, royalties_total: 0, fantasy_entrances: 0, fouls: 0 };
+          // Convert to the format expected by the profile page
+          resolve({
+            hands: stats.hands_played,
+            royaltiesTotal: stats.royalties_total,
+            fantasyEntrances: stats.fantasy_entrances,
+            fouls: stats.fouls
+          });
+        }
       }
     );
   });

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Dimensions, Image } from "react-native";
+import { useNavigation } from "@react-navigation/native";
 
 // Helper function to compute total committed cards
 const committedTotal = (b) => b.top.length + b.middle.length + b.bottom.length;
@@ -13,6 +14,9 @@ import DraggableCard from "../components/DraggableCard";
 import BackButton from "../components/BackButton";
 import { useDrag } from "../drag/DragContext";
 import { play as playSfx } from "../sound/sfx";
+import * as SecureStore from "expo-secure-store";
+import axios from "axios";
+import { SERVER_URL } from "../config/env";
 
 // Responsive design system
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -39,14 +43,14 @@ const getResponsiveDimensions = () => {
   const SLOT_H = Math.floor(playerBaseSlotH * 0.975); // 2.5% smaller
   
   // Responsive gaps based on screen size
-  const gapPercent = 0.01; // 1% of screen width
-  const SLOT_GAP = Math.min(Math.max(screenWidth * gapPercent, 1), 3); // Min 1px, Max 3px
-  const ROW_GAP = Math.min(Math.max(screenWidth * gapPercent, 1), 3); // Min 1px, Max 3px
+  const gapPercent = 0.005; // 0.5% of screen width (reduced from 1%)
+  const SLOT_GAP = Math.min(Math.max(screenWidth * gapPercent, 1), 2); // Min 1px, Max 2px (reduced from 3px)
+  const ROW_GAP = Math.min(Math.max(screenWidth * 0.002, 1), 2); // 0.2% of screen width, Min 1px, Max 2px
   
   // Smaller gaps for opponent board (more compact)
   const opponentGapPercent = 0.005; // 0.5% of screen width (half the normal gap)
   const OPPONENT_SLOT_GAP = Math.min(Math.max(screenWidth * opponentGapPercent, 1), 2); // Min 1px, Max 2px
-  const OPPONENT_ROW_GAP = Math.min(Math.max(screenWidth * opponentGapPercent, 1), 2); // Min 1px, Max 2px
+  const OPPONENT_ROW_GAP = Math.min(Math.max(screenWidth * 0.002, 1), 2); // 0.2% of screen width, Min 1px, Max 2px
   
   // Tighter gaps for hand cards (especially fantasyland with 7 cards)
   const handGapPercent = 0.0001; // 0.01% of screen width (tiny gap)
@@ -300,7 +304,7 @@ function TimerBar({ timer, responsive }) {
   );
 }
 
-function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onMidLayout, onBotLayout, topAnchorRef, midAnchorRef, botAnchorRef, isFouled, inFantasyland, responsive, showScore = false, scoreDetail = null }) {
+function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onMidLayout, onBotLayout, topAnchorRef, midAnchorRef, botAnchorRef, isFouled, inFantasyland, responsive, showScore = false, scoreDetail = null, animationStep = 0 }) {
   const tiny = true;
   
   // Responsive opponent card dimensions (using opponent-specific sizing)
@@ -402,7 +406,7 @@ function OpponentBoard({ board, hidden, topRef, midRef, botRef, onTopLayout, onM
 
         
         {/* Total Score Overlay for Bottom */}
-        {showScore && scoreDetail && (
+        {showScore && scoreDetail && animationStep >= 4 && (
           <View style={{
             position: 'absolute',
             bottom: -8,
@@ -466,6 +470,326 @@ function ScoreBubbles({ show, playerAnchors, oppAnchors, detail, animationStep }
   );
 }
 
+// Detailed Scoring Overlay Component
+function DetailedScoringOverlay({ show, scoreDetail, animationStep, responsive, onClose }) {
+  if (!show || !scoreDetail || animationStep < 4) return null;
+  
+  const a = scoreDetail.a;
+  const b = scoreDetail.b;
+  
+  // Calculate totals
+  const aTotal = getTotalScore(a);
+  const bTotal = getTotalScore(b);
+  const difference = aTotal - bTotal;
+  
+  // Debug logging
+  console.log('🎯 DETAILED SCORING DEBUG:', {
+    a: a,
+    b: b,
+    aTotal,
+    bTotal,
+    difference,
+    chipConversion: difference * 10
+  });
+  
+  return (
+    <View style={{
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.8)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 1000,
+      padding: 20
+    }}>
+      <View style={{
+        backgroundColor: colors.panel,
+        borderRadius: 16,
+        padding: 20,
+        maxWidth: responsive.isSmallDevice ? 320 : 400,
+        width: '100%',
+        borderWidth: 2,
+        borderColor: colors.outline
+      }}>
+        {/* Header */}
+        <Text style={{
+          color: colors.text,
+          fontSize: responsive.BASE_FONT_SIZE * 1.2,
+          fontWeight: '800',
+          textAlign: 'center',
+          marginBottom: 16
+        }}>
+          Score Breakdown
+        </Text>
+        
+        {/* Line Scores Table */}
+        <View style={{ marginBottom: 16 }}>
+          <View style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            paddingVertical: 8,
+            borderBottomWidth: 1,
+            borderBottomColor: colors.outline
+          }}>
+            <Text style={{ color: colors.sub, fontSize: responsive.SMALL_FONT_SIZE, fontWeight: '600' }}>Line</Text>
+            <Text style={{ color: colors.sub, fontSize: responsive.SMALL_FONT_SIZE, fontWeight: '600' }}>You</Text>
+            <Text style={{ color: colors.sub, fontSize: responsive.SMALL_FONT_SIZE, fontWeight: '600' }}>Opponent</Text>
+          </View>
+          
+          {/* Top Row */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}>
+            <Text style={{ color: colors.text, fontSize: responsive.SMALL_FONT_SIZE }}>Top</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={{ 
+                color: a.lines.top > 0 ? colors.ok : colors.text, 
+                fontSize: responsive.SMALL_FONT_SIZE,
+                fontWeight: a.lines.top > 0 ? '700' : '400'
+              }}>
+                {a.lines.top >= 0 ? '+' : ''}{a.lines.top}
+              </Text>
+              {a.royaltiesBreakdown?.top > 0 && (
+                <Text style={{ 
+                  color: colors.ok, 
+                  fontSize: responsive.SMALL_FONT_SIZE * 0.8,
+                  fontWeight: '600',
+                  marginLeft: 4
+                }}>
+                  (+{a.royaltiesBreakdown.top})
+                </Text>
+              )}
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={{ 
+                color: b.lines.top > 0 ? colors.ok : colors.text, 
+                fontSize: responsive.SMALL_FONT_SIZE,
+                fontWeight: b.lines.top > 0 ? '700' : '400'
+              }}>
+                {b.lines.top >= 0 ? '+' : ''}{b.lines.top}
+              </Text>
+              {b.royaltiesBreakdown?.top > 0 && (
+                <Text style={{ 
+                  color: colors.ok, 
+                  fontSize: responsive.SMALL_FONT_SIZE * 0.8,
+                  fontWeight: '600',
+                  marginLeft: 4
+                }}>
+                  (+{b.royaltiesBreakdown.top})
+                </Text>
+              )}
+            </View>
+          </View>
+          
+          {/* Middle Row */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}>
+            <Text style={{ color: colors.text, fontSize: responsive.SMALL_FONT_SIZE }}>Middle</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={{ 
+                color: a.lines.middle > 0 ? colors.ok : colors.text, 
+                fontSize: responsive.SMALL_FONT_SIZE,
+                fontWeight: a.lines.middle > 0 ? '700' : '400'
+              }}>
+                {a.lines.middle >= 0 ? '+' : ''}{a.lines.middle}
+              </Text>
+              {a.royaltiesBreakdown?.middle > 0 && (
+                <Text style={{ 
+                  color: colors.ok, 
+                  fontSize: responsive.SMALL_FONT_SIZE * 0.8,
+                  fontWeight: '600',
+                  marginLeft: 4
+                }}>
+                  (+{a.royaltiesBreakdown.middle})
+                </Text>
+              )}
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={{ 
+                color: b.lines.middle > 0 ? colors.ok : colors.text, 
+                fontSize: responsive.SMALL_FONT_SIZE,
+                fontWeight: b.lines.middle > 0 ? '700' : '400'
+              }}>
+                {b.lines.middle >= 0 ? '+' : ''}{b.lines.middle}
+              </Text>
+              {b.royaltiesBreakdown?.middle > 0 && (
+                <Text style={{ 
+                  color: colors.ok, 
+                  fontSize: responsive.SMALL_FONT_SIZE * 0.8,
+                  fontWeight: '600',
+                  marginLeft: 4
+                }}>
+                  (+{b.royaltiesBreakdown.middle})
+                </Text>
+              )}
+            </View>
+          </View>
+          
+          {/* Bottom Row */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}>
+            <Text style={{ color: colors.text, fontSize: responsive.SMALL_FONT_SIZE }}>Bottom</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={{ 
+                color: a.lines.bottom > 0 ? colors.ok : colors.text, 
+                fontSize: responsive.SMALL_FONT_SIZE,
+                fontWeight: a.lines.bottom > 0 ? '700' : '400'
+              }}>
+                {a.lines.bottom >= 0 ? '+' : ''}{a.lines.bottom}
+              </Text>
+              {a.royaltiesBreakdown?.bottom > 0 && (
+                <Text style={{ 
+                  color: colors.ok, 
+                  fontSize: responsive.SMALL_FONT_SIZE * 0.8,
+                  fontWeight: '600',
+                  marginLeft: 4
+                }}>
+                  (+{a.royaltiesBreakdown.bottom})
+                </Text>
+              )}
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={{ 
+                color: b.lines.bottom > 0 ? colors.ok : colors.text, 
+                fontSize: responsive.SMALL_FONT_SIZE,
+                fontWeight: b.lines.bottom > 0 ? '700' : '400'
+              }}>
+                {b.lines.bottom >= 0 ? '+' : ''}{b.lines.bottom}
+              </Text>
+              {b.royaltiesBreakdown?.bottom > 0 && (
+                <Text style={{ 
+                  color: colors.ok, 
+                  fontSize: responsive.SMALL_FONT_SIZE * 0.8,
+                  fontWeight: '600',
+                  marginLeft: 4
+                }}>
+                  (+{b.royaltiesBreakdown.bottom})
+                </Text>
+              )}
+            </View>
+          </View>
+          
+          {/* Scoop Bonus */}
+          {(a.scoop > 0 || b.scoop > 0) && (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}>
+              <Text style={{ color: colors.text, fontSize: responsive.SMALL_FONT_SIZE }}>Scoop Bonus</Text>
+              <Text style={{ 
+                color: a.scoop > 0 ? colors.ok : colors.text, 
+                fontSize: responsive.SMALL_FONT_SIZE,
+                fontWeight: a.scoop > 0 ? '700' : '400'
+              }}>
+                {a.scoop > 0 ? '+' : ''}{a.scoop}
+              </Text>
+              <Text style={{ 
+                color: b.scoop > 0 ? colors.ok : colors.text, 
+                fontSize: responsive.SMALL_FONT_SIZE,
+                fontWeight: b.scoop > 0 ? '700' : '400'
+              }}>
+                {b.scoop > 0 ? '+' : ''}{b.scoop}
+              </Text>
+            </View>
+          )}
+          
+          {/* Total */}
+          <View style={{ 
+            flexDirection: 'row', 
+            justifyContent: 'space-between', 
+            paddingVertical: 8,
+            borderTopWidth: 1,
+            borderTopColor: colors.outline,
+            marginTop: 8
+          }}>
+            <Text style={{ color: colors.text, fontSize: responsive.BASE_FONT_SIZE, fontWeight: '700' }}>Total</Text>
+            <Text style={{ 
+              color: aTotal > 0 ? colors.ok : aTotal < 0 ? '#ff6b6b' : colors.text, 
+              fontSize: responsive.BASE_FONT_SIZE,
+              fontWeight: '700'
+            }}>
+              {aTotal >= 0 ? '+' : ''}{aTotal}
+            </Text>
+            <Text style={{ 
+              color: bTotal > 0 ? colors.ok : bTotal < 0 ? '#ff6b6b' : colors.text, 
+              fontSize: responsive.BASE_FONT_SIZE,
+              fontWeight: '700'
+            }}>
+              {bTotal >= 0 ? '+' : ''}{bTotal}
+            </Text>
+          </View>
+        </View>
+        
+        {/* Difference */}
+        <View style={{
+          backgroundColor: colors.panel2,
+          borderRadius: 8,
+          padding: 12,
+          alignItems: 'center',
+          marginBottom: 16
+        }}>
+          <Text style={{
+            color: colors.sub,
+            fontSize: responsive.SMALL_FONT_SIZE,
+            fontWeight: '600',
+            marginBottom: 4
+          }}>
+            Difference
+          </Text>
+          <Text style={{
+            color: difference >= 0 ? colors.ok : '#ff6b6b',
+            fontSize: responsive.BASE_FONT_SIZE * 1.1,
+            fontWeight: '800'
+          }}>
+            {difference >= 0 ? '+' : ''}{difference} points
+          </Text>
+        </View>
+        
+        {/* Chip Conversion for Ranked Matches */}
+        <View style={{
+          backgroundColor: colors.panel2,
+          borderRadius: 8,
+          padding: 12,
+          alignItems: 'center',
+          marginBottom: 16
+        }}>
+          <Text style={{
+            color: colors.sub,
+            fontSize: responsive.SMALL_FONT_SIZE,
+            fontWeight: '600',
+            marginBottom: 4
+          }}>
+            Chip Conversion (1 point = 10 chips)
+          </Text>
+          <Text style={{
+            color: difference >= 0 ? colors.ok : '#ff6b6b',
+            fontSize: responsive.BASE_FONT_SIZE * 1.1,
+            fontWeight: '800'
+          }}>
+            {difference >= 0 ? '+' : ''}{difference * 10} chips
+          </Text>
+        </View>
+        
+        {/* Close Button */}
+        <Pressable
+          onPress={onClose}
+          style={{
+            backgroundColor: colors.accent,
+            borderRadius: 8,
+            paddingVertical: 12,
+            paddingHorizontal: 24,
+            alignItems: 'center'
+          }}
+        >
+          <Text style={{
+            color: colors.text,
+            fontSize: responsive.BASE_FONT_SIZE,
+            fontWeight: '700'
+          }}>
+            Close
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 // Helper function to calculate line scores
 function getLineScore(d, line) {
   const lineScore = d.lines[line] || 0;
@@ -482,63 +806,102 @@ function getTotalScore(d) {
   return top + middle + bottom + scoopBonus;
 }
 
-// Animated Chip Counter Component
-function AnimatedChipCounter({ startValue, endValue, isAnimating, responsive, isPlayer = false }) {
-  const [displayValue, setDisplayValue] = useState(startValue);
-  
-  useEffect(() => {
-    if (isAnimating && startValue !== endValue) {
-      const duration = 1500; // 1.5 seconds
-      const steps = 30; // 30 steps for smooth animation
-      const stepDuration = duration / steps;
-      const increment = (endValue - startValue) / steps;
-      
-      let currentStep = 0;
-      const interval = setInterval(() => {
-        currentStep++;
-        const newValue = Math.round(startValue + (increment * currentStep));
-        setDisplayValue(newValue);
-        
-        if (currentStep >= steps) {
-          setDisplayValue(endValue);
-          clearInterval(interval);
-        }
-      }, stepDuration);
-      
-      return () => clearInterval(interval);
-    } else {
-      setDisplayValue(endValue);
-    }
-  }, [startValue, endValue, isAnimating]);
-  
-  // Determine text color based on animation state and direction
-  const getTextColor = () => {
-    if (!isPlayer || !isAnimating || startValue === endValue) {
-      return colors.sub; // Default color
-    }
-    
-    if (endValue > startValue) {
-      return colors.ok || '#2e7d32'; // Green for increasing
-    } else if (endValue < startValue) {
-      return '#C62828'; // Red for decreasing
-    }
-    
-    return colors.sub; // Default for no change
-  };
+// Player Name and Avatar Component
+function PlayerNameWithAvatar({ name, avatar, inFantasyland, responsive, isPlayer = false }) {
+  // Responsive avatar size based on screen size
+  const avatarSize = responsive.isSmallDevice ? 32 : responsive.isMediumDevice ? 36 : 40;
   
   return (
+    <View style={{ 
+      alignItems: 'center', 
+      justifyContent: 'center', 
+      marginBottom: 8,
+      position: 'relative',
+      minWidth: 200 // Fixed minimum width to ensure consistent positioning
+    }}>
+      {/* Avatar - Fixed position at center */}
+      <View style={{
+        width: avatarSize,
+        height: avatarSize,
+        borderRadius: avatarSize / 2,
+        borderWidth: 2,
+        borderColor: colors.outline,
+        backgroundColor: colors.panel2,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 4,
+        overflow: 'hidden',
+        alignSelf: 'center'
+      }}>
+        {avatar ? (
+          <Image 
+            source={{ uri: avatar }} 
+            style={{ 
+              width: avatarSize, 
+              height: avatarSize,
+              borderRadius: avatarSize / 2
+            }} 
+          />
+        ) : (
+          <Text style={{ 
+            color: colors.text, 
+            fontSize: avatarSize * 0.4, 
+            fontWeight: '700' 
+          }}>
+            {(name || 'U').slice(0, 1).toUpperCase()}
+          </Text>
+        )}
+      </View>
+      
+      {/* Username - Centered below avatar */}
+      <View style={{ 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        justifyContent: 'center'
+      }}>
+        {/* Fantasyland indicator */}
+        {inFantasyland && (
+          <Text style={{ 
+            fontSize: responsive.LARGE_FONT_SIZE, 
+            marginRight: 4 
+          }}>
+            🌈
+          </Text>
+        )}
+        
+        <Text style={{ 
+          color: colors.text, 
+          fontWeight: '700', 
+          fontSize: responsive.LARGE_FONT_SIZE,
+          textAlign: 'center'
+        }}>
+          {name || 'Player'}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+// Simple Chip Counter Component - shows server values directly
+function ChipCounter({ value, responsive }) {
+  return (
     <Text style={{ 
-      color: getTextColor(), 
+      color: colors.sub, 
       fontSize: responsive.BASE_FONT_SIZE 
     }}>
-      {displayValue}
+      {value}
     </Text>
   );
 }
 
 export default function Play({ route }) {
+  const navigation = useNavigation();
   const { roomId } = route.params || {};
   console.log("🎯 MOBILE: Play screen loaded with roomId:", roomId, "route.params:", route.params);
+  
+  // Avatar state
+  const [playerAvatar, setPlayerAvatar] = useState(null);
+  const [opponentAvatar, setOpponentAvatar] = useState(null);
   
   // Handle screen size changes and orientation changes
   const [dimensions, setDimensions] = useState(Dimensions.get('window'));
@@ -575,9 +938,9 @@ export default function Play({ route }) {
     const SLOT_H = Math.floor(playerBaseSlotH * 0.975); // 2.5% smaller
     
     // Responsive gaps based on screen size
-    const gapPercent = 0.01; // 1% of screen width
-    const SLOT_GAP = Math.min(Math.max(screenWidth * gapPercent, 1), 3); // Min 1px, Max 3px
-    const ROW_GAP = Math.min(Math.max(screenWidth * gapPercent, 1), 3); // Min 1px, Max 3px
+    const gapPercent = 0.005; // 0.5% of screen width (reduced from 1%)
+    const SLOT_GAP = Math.min(Math.max(screenWidth * gapPercent, 1), 2); // Min 1px, Max 2px (reduced from 3px)
+    const ROW_GAP = Math.min(Math.max(screenWidth * 0.002, 1), 2); // 0.2% of screen width, Min 1px, Max 2px
     
     // Tighter gaps for hand cards (especially fantasyland with 7 cards)
     const handGapPercent = 0.0001; // 0.01% of screen width (tiny gap)
@@ -668,6 +1031,7 @@ export default function Play({ route }) {
   const handNumber = useGame(state => state.round);
   const isRanked = useGame(state => state.isRanked);
   const timer = useGame(state => state.timer);
+  const gameEnd = useGame(state => state.gameEnd);
   
   // Get functions that don't change
   const { applyEvent, setPlacement, unstage, commitTurnLocal } = useGame();
@@ -710,9 +1074,11 @@ export default function Play({ route }) {
   const [sortMode, setSortMode] = useState('rank'); // 'rank' or 'suit'
   
   // Animation state for score reveal sequence
-  const [scoreAnimationStep, setScoreAnimationStep] = useState(0); // 0 = none, 1 = top, 2 = middle, 3 = bottom, 4 = total, 5 = chip count indicator, 6 = chip stack animation
-  const [chipAnimationStart, setChipAnimationStart] = useState(false);
+  const [scoreAnimationStep, setScoreAnimationStep] = useState(0); // 0 = none, 1 = top, 2 = middle, 3 = bottom, 4 = total, 5 = chip count indicator
   const [showChipChange, setShowChipChange] = useState(false);
+  
+  // Detailed scoring overlay state
+
 
   // measure rows for opponent
   const oTopRef = useRef(null), oMidRef = useRef(null), oBotRef = useRef(null);
@@ -776,6 +1142,11 @@ export default function Play({ route }) {
         // Handle auto-commit punishment
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
+      if (evt === 'game:end') {
+        // Handle game end - the splash screen will be shown automatically
+        console.log('🎯 Game ended:', data);
+        playSfx('commit'); // Play a sound for game end
+      }
       applyEvent(evt, data);
     });
     
@@ -815,8 +1186,7 @@ export default function Play({ route }) {
       }, 2500); // 500ms after total score
       
       const timer6 = setTimeout(() => {
-        setScoreAnimationStep(6); // Chip stack animation
-        setChipAnimationStart(true);
+        setScoreAnimationStep(5); // Chip count indicator (no animation)
       }, 3000); // 500ms after chip count indicator
       
       return () => {
@@ -839,7 +1209,6 @@ export default function Play({ route }) {
     if (scoreDetail) {
       setShowScore(true);
       setScoreAnimationStep(0);
-      setChipAnimationStart(false);
       setShowChipChange(false);
       
       // Start animation sequence with delays and sound effects
@@ -869,8 +1238,7 @@ export default function Play({ route }) {
       }, 2500); // 500ms after total score
       
       const timer6 = setTimeout(() => {
-        setScoreAnimationStep(6); // Chip stack animation
-        setChipAnimationStart(true); // Start chip animation
+        setScoreAnimationStep(5); // Chip count indicator (no animation)
       }, 3000); // 500ms after chip count indicator
       
       // Clean up timers after animation completes
@@ -941,6 +1309,41 @@ export default function Play({ route }) {
     return result;
   }, [hand, board.top, board.middle, board.bottom, staged.placements, staged.discard, inFantasyland, sortMode]);
 
+  // Load player avatar
+  const loadPlayerAvatar = async () => {
+    try {
+      const token = await SecureStore.getItemAsync("ofc_jwt");
+      if (!token) return;
+      
+      const r = await axios.get(`${SERVER_URL}/me`, { headers: { Authorization: `Bearer ${token}` } });
+      setPlayerAvatar(r.data?.avatar || null);
+    } catch (error) {
+      console.error('Error loading player avatar:', error);
+    }
+  };
+
+  // Load opponent avatar
+  const loadOpponentAvatar = async (opponentId) => {
+    if (!opponentId) return;
+    
+    // For now, just set to null to avoid API calls and errors
+    // In the future, we could implement a more sophisticated approach
+    // that checks if the opponent has an avatar before making the call
+    setOpponentAvatar(null);
+  };
+
+  // Load avatars when component mounts
+  useEffect(() => {
+    loadPlayerAvatar();
+  }, []);
+
+  // Load opponent avatar when opponent changes
+  useEffect(() => {
+    if (opponent?.userId) {
+      loadOpponentAvatar(opponent.userId);
+    }
+  }, [opponent?.userId]);
+
   // opponent
   const meId = useGame(state => state.userId);
   const me = useMemo(() => players.find(p => p.userId === meId) || { name: 'You', score: 0 }, [players, meId]);
@@ -949,18 +1352,13 @@ export default function Play({ route }) {
     return others[0] || null;
   }, [others]);
   
-  // Calculate final chip values for animation
+  // Use server chip values directly - no local calculation
   const finalChipValues = useMemo(() => {
-    if (!reveal?.results) return { player: me.tableChips || 500, opponent: others[0]?.tableChips || 500 };
-    
-    const playerChipChange = reveal.results[meId] || 0;
-    const opponentChipChange = reveal.results[others[0]?.userId] || 0;
-    
-    return {
-      player: (me.tableChips || 500) + (playerChipChange * 10),
-      opponent: (others[0]?.tableChips || 500) + (opponentChipChange * 10)
+    return { 
+      player: me.tableChips || 500, 
+      opponent: others[0]?.tableChips || 500 
     };
-  }, [reveal?.results, me.tableChips, others[0]?.tableChips, meId, others]);
+  }, [me.tableChips, others[0]?.tableChips]);
   const opponentBoard = useMemo(() => {
     if (!reveal) return { top: [], middle: [], bottom: [] };
     const opp = reveal.boards?.find(b => b.userId === opponent?.userId);
@@ -1103,6 +1501,107 @@ export default function Play({ route }) {
 
 
 
+  // Game End Splash Screen
+  if (gameEnd) {
+    const isWinner = gameEnd.winner?.userId === meId;
+    const isLoser = gameEnd.loser?.userId === meId;
+    
+    return (
+      <View style={{ 
+        flex: 1, 
+        backgroundColor: colors.bg, 
+        justifyContent: 'center', 
+        alignItems: 'center',
+        paddingHorizontal: 40
+      }}>
+        <View style={{
+          backgroundColor: colors.panel2,
+          borderRadius: 20,
+          padding: 30,
+          alignItems: 'center',
+          borderWidth: 2,
+          borderColor: isWinner ? '#4CAF50' : isLoser ? '#F44336' : colors.outline,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.3,
+          shadowRadius: 8,
+          elevation: 8
+        }}>
+          <Text style={{
+            fontSize: 28,
+            fontWeight: 'bold',
+            color: isWinner ? '#4CAF50' : isLoser ? '#F44336' : colors.text,
+            marginBottom: 10,
+            textAlign: 'center'
+          }}>
+            {isWinner ? '🎉 Congratulations!' : isLoser ? '😔 Unlucky!' : 'Game Over'}
+          </Text>
+          
+          <Text style={{
+            fontSize: 18,
+            color: colors.text,
+            marginBottom: 20,
+            textAlign: 'center',
+            lineHeight: 24
+          }}>
+            {isWinner 
+              ? `Winner + 500 chips to your chip balance`
+              : isLoser 
+                ? `Loser - 500 chips to your chip balance`
+                : 'The game has ended'
+            }
+          </Text>
+          
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginBottom: 20
+          }}>
+            <Image 
+              source={require('../../assets/images/chips.png')} 
+              style={{ 
+                width: 24, 
+                height: 24,
+                marginRight: 8
+              }} 
+            />
+            <Text style={{
+              fontSize: 20,
+              fontWeight: 'bold',
+              color: colors.text
+            }}>
+              {gameEnd.finalChips.find(p => p.userId === meId)?.chips || 500}
+            </Text>
+          </View>
+          
+          <Pressable
+            onPress={() => {
+              // Leave the room and navigate back to home
+              emit('room:leave', { roomId: roomId });
+              // Navigate back to home screen
+              navigation.navigate('Home');
+            }}
+            style={{
+              backgroundColor: colors.accent,
+              paddingHorizontal: 20,
+              paddingVertical: 12,
+              borderRadius: 10,
+              marginTop: 10
+            }}
+          >
+            <Text style={{
+              color: colors.text,
+              fontSize: 16,
+              fontWeight: '600'
+            }}>
+              Return to Home
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg, position: 'relative' }} pointerEvents="box-none">
       <BackButton title="" />
@@ -1110,7 +1609,7 @@ export default function Play({ route }) {
       {/* Hand number at top center */}
       <View style={{ 
         position: 'absolute', 
-        top: currentResponsive.isSmallDevice ? 50 : 60, 
+        top: currentResponsive.isSmallDevice ? 40 : 50, 
         left: 0, 
         right: 0, 
         alignItems: 'center',
@@ -1169,88 +1668,115 @@ export default function Play({ route }) {
           Test Reveal
         </Text>
       </Pressable>
+      
 
 
-      {/* Opponent area - responsive height */}
+
+      {/* Opponent area - with name/avatar/chips at top left */}
       <View style={{ 
-        height: currentResponsive.SECTION_SPACING * 3.5, // Increased height to accommodate name and board
-        paddingTop: currentResponsive.SECTION_SPACING * 2.2, // Increased padding to move opponent name down more
+        height: currentResponsive.SECTION_SPACING * 3.5,
+        paddingTop: currentResponsive.SECTION_SPACING * 1.5,
         paddingHorizontal: currentResponsive.HORIZONTAL_PADDING,
         position: 'relative'
       }}>
+        {/* Opponent Name - positioned at top center */}
         {others[0] ? (
-          <View style={{ alignItems: "center" }}>
-            {/* Opponent Name - centered over board */}
-            <View style={{ alignItems: 'center', justifyContent: 'center', marginBottom: 8, position: 'relative' }}>
+          <View style={{ 
+            position: 'absolute', 
+            top: currentResponsive.SECTION_SPACING * 2.3, 
+            left: 0, 
+            right: 0,
+            zIndex: 10,
+            alignItems: 'center'
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               {others[0]?.inFantasyland && (
                 <Text style={{ 
-                  position: 'absolute', 
-                  left: '-15%', 
-                  fontSize: currentResponsive.LARGE_FONT_SIZE 
+                  fontSize: currentResponsive.LARGE_FONT_SIZE, 
+                  marginRight: 4 
                 }}>
                   🌈
                 </Text>
               )}
-              <Text style={{ 
-                color: colors.text, 
-                fontWeight: '700', 
-                fontSize: currentResponsive.LARGE_FONT_SIZE
-              }}>
-                {others[0].name}
-              </Text>
+                              <Text style={{ 
+                  color: colors.text, 
+                  fontWeight: '700', 
+                  fontSize: currentResponsive.BASE_FONT_SIZE
+                }}>
+                  {others[0].name || 'Opponent'}
+                </Text>
             </View>
-            
-            {/* Opponent Chip Stack - underneath name */}
-            <View style={{ 
-              alignItems: 'center', 
-              justifyContent: 'center',
-              position: 'relative',
-              minWidth: 200 // Ensure enough space for the indicator
-            }}>
-              {/* Centered chip stack */}
+          </View>
+        ) : null}
+
+        {/* Opponent Avatar and Chips - positioned at top left */}
+        {others[0] ? (
+          <View style={{ 
+            position: 'absolute', 
+            top: currentResponsive.SECTION_SPACING * 2.7, 
+            left: currentResponsive.HORIZONTAL_PADDING, 
+            zIndex: 10,
+            flexDirection: 'row',
+            alignItems: 'center'
+          }}>
+            {/* Opponent Avatar and Chips - stacked vertically */}
+            <View style={{ alignItems: 'center' }}>
+              {/* Opponent Avatar - increased size to match player */}
+              <View style={{
+                width: currentResponsive.isSmallDevice ? 40 : 44,
+                height: currentResponsive.isSmallDevice ? 40 : 44,
+                borderRadius: (currentResponsive.isSmallDevice ? 40 : 44) / 2,
+                borderWidth: 2,
+                borderColor: colors.outline,
+                backgroundColor: colors.panel2,
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 4,
+                overflow: 'hidden'
+              }}>
+                {opponentAvatar ? (
+                  <Image 
+                    source={{ uri: opponentAvatar }} 
+                    style={{ 
+                      width: currentResponsive.isSmallDevice ? 40 : 44, 
+                      height: currentResponsive.isSmallDevice ? 40 : 44,
+                      borderRadius: (currentResponsive.isSmallDevice ? 40 : 44) / 2
+                    }} 
+                  />
+                ) : (
+                  <Text style={{ 
+                    color: colors.text, 
+                    fontSize: (currentResponsive.isSmallDevice ? 40 : 44) * 0.4, 
+                    fontWeight: '700' 
+                  }}>
+                    {(others[0].name || 'U').slice(0, 1).toUpperCase()}
+                  </Text>
+                )}
+              </View>
+              
+              {/* Opponent Chip Stack - positioned under avatar */}
               <View style={{ 
                 flexDirection: 'row', 
-                alignItems: 'center', 
-                justifyContent: 'center'
+                alignItems: 'center'
               }}>
-                <AnimatedChipCounter
-                  startValue={others[0].tableChips || 500}
-                  endValue={finalChipValues.opponent}
-                  isAnimating={chipAnimationStart}
-                  responsive={currentResponsive}
-                />
                 <Image 
                   source={require('../../assets/images/chips.png')} 
                   style={{ 
                     width: currentResponsive.BASE_FONT_SIZE * 1.2, 
                     height: currentResponsive.BASE_FONT_SIZE * 1.2,
-                    marginLeft: 4
+                    marginRight: 4
                   }} 
                 />
+                <ChipCounter
+                  value={finalChipValues.opponent}
+                  responsive={currentResponsive}
+                />
               </View>
-              
-              {/* Chip Change Indicator - positioned absolutely to the right */}
-              {showChipChange && scoreDetail && (
-                <View style={{
-                  position: 'absolute',
-                  left: '100%',
-                  marginLeft: 8,
-                  opacity: 0.9
-                }}>
-                  <Text style={{
-                    color: finalChipValues.opponent > (others[0].tableChips || 500) ? '#2e7d32' : '#C62828', // Green for gain, red for loss
-                    fontSize: currentResponsive.SMALL_FONT_SIZE,
-                    fontWeight: '700'
-                  }}>
-                    {finalChipValues.opponent > (others[0].tableChips || 500) ? '+' : ''}
-                    {Math.abs(finalChipValues.opponent - (others[0].tableChips || 500))} chips
-                  </Text>
-                </View>
-              )}
             </View>
           </View>
         ) : null}
-        <View style={{ marginTop: currentResponsive.SECTION_SPACING * 0.15 }}>
+        
+        <View style={{ marginTop: currentResponsive.SECTION_SPACING * 1.3 }}>
           <OpponentBoard
             board={opponentBoard}
             hidden={!reveal}
@@ -1268,94 +1794,116 @@ export default function Play({ route }) {
             responsive={currentResponsive}
             showScore={showScore}
             scoreDetail={scoreDetail}
+            animationStep={scoreAnimationStep}
           />
         </View>
       </View>
 
-      {/* Player board and hand area - responsive layout */}
+      {/* Player board and hand area - with name/avatar/chips at top left */}
       <View style={{ 
         flex: 1, 
         justifyContent: "flex-start", 
-        paddingTop: currentResponsive.SECTION_SPACING * 3.2, // Increased padding to move player area down more
+        paddingTop: currentResponsive.SECTION_SPACING * 2.5,
         position: 'relative'
       }}>
-                  <View style={{ alignSelf: "center", marginBottom: currentResponsive.SECTION_SPACING * 0.15 }}>
-            {/* Player Name - centered over board */}
-            <View style={{ alignItems: 'center', justifyContent: 'center', marginBottom: 8, position: 'relative' }}>
-              {inFantasyland && (
-                <Text style={{ 
-                  position: 'absolute', 
-                  left: '+5%', 
-                  fontSize: currentResponsive.LARGE_FONT_SIZE 
-                }}>
-                  🌈
-                </Text>
-              )}
+        {/* Player Name - positioned at top center */}
+        <View style={{ 
+          position: 'absolute', 
+          top: currentResponsive.SECTION_SPACING * 3.0, 
+          left: 0, 
+          right: 0,
+          zIndex: 10,
+          alignItems: 'center'
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            {inFantasyland && (
               <Text style={{ 
+                fontSize: currentResponsive.LARGE_FONT_SIZE, 
+                marginRight: 4 
+              }}>
+                🌈
+              </Text>
+            )}
+                          <Text style={{ 
                 color: colors.text, 
                 fontWeight: '700', 
-                fontSize: currentResponsive.LARGE_FONT_SIZE
+                fontSize: currentResponsive.BASE_FONT_SIZE
               }}>
                 {me.name || 'You'}
               </Text>
-            </View>
-            
-            {/* Player Chip Stack - underneath name */}
-            <View style={{ 
-              alignItems: 'center', 
+          </View>
+        </View>
+
+        {/* Player Avatar and Chips - positioned at top left */}
+        <View style={{ 
+          position: 'absolute', 
+          top: currentResponsive.SECTION_SPACING * 3.7, 
+          left: currentResponsive.HORIZONTAL_PADDING, 
+          zIndex: 10,
+          alignItems: 'center'
+        }}>
+          {/* Player Avatar and Chips - stacked vertically */}
+          <View style={{ alignItems: 'center' }}>
+            {/* Player Avatar - increased size */}
+            <View style={{
+              width: currentResponsive.isSmallDevice ? 40 : 44,
+              height: currentResponsive.isSmallDevice ? 40 : 44,
+              borderRadius: (currentResponsive.isSmallDevice ? 40 : 44) / 2,
+              borderWidth: 2,
+              borderColor: colors.outline,
+              backgroundColor: colors.panel2,
+              alignItems: 'center',
               justifyContent: 'center',
-              position: 'relative',
-              minWidth: 200 // Ensure enough space for the indicator
+              marginBottom: 4,
+              overflow: 'hidden'
             }}>
-              {/* Centered chip stack */}
-              <View style={{ 
-                flexDirection: 'row', 
-                alignItems: 'center', 
-                justifyContent: 'center'
-              }}>
-                <AnimatedChipCounter
-                  startValue={me.tableChips || 500}
-                  endValue={finalChipValues.player}
-                  isAnimating={chipAnimationStart}
-                  responsive={currentResponsive}
-                  isPlayer={true}
-                />
+              {playerAvatar ? (
                 <Image 
-                  source={require('../../assets/images/chips.png')} 
+                  source={{ uri: playerAvatar }} 
                   style={{ 
-                    width: currentResponsive.BASE_FONT_SIZE * 1.2, 
-                    height: currentResponsive.BASE_FONT_SIZE * 1.2,
-                    marginLeft: 4
+                    width: currentResponsive.isSmallDevice ? 40 : 44, 
+                    height: currentResponsive.isSmallDevice ? 40 : 44,
+                    borderRadius: (currentResponsive.isSmallDevice ? 40 : 44) / 2
                   }} 
                 />
-              </View>
-              
-              {/* Chip Change Indicator - positioned absolutely to the right */}
-              {showChipChange && scoreDetail && (
-                <View style={{
-                  position: 'absolute',
-                  left: '100%',
-                  marginLeft: 8,
-                  opacity: 0.9
+              ) : (
+                <Text style={{ 
+                  color: colors.text, 
+                  fontSize: (currentResponsive.isSmallDevice ? 40 : 44) * 0.4, 
+                  fontWeight: '700' 
                 }}>
-                  <Text style={{
-                    color: finalChipValues.player > (me.tableChips || 500) ? '#2e7d32' : '#C62828', // Green for gain, red for loss
-                    fontSize: currentResponsive.SMALL_FONT_SIZE,
-                    fontWeight: '700'
-                  }}>
-                    {finalChipValues.player > (me.tableChips || 500) ? '+' : ''}
-                    {Math.abs(finalChipValues.player - (me.tableChips || 500))} chips
-                  </Text>
-                </View>
+                  {(me.name || 'U').slice(0, 1).toUpperCase()}
+                </Text>
               )}
             </View>
+            
+            {/* Player Chip Stack - positioned under avatar */}
+            <View style={{ 
+              flexDirection: 'row', 
+              alignItems: 'center'
+            }}>
+              <Image 
+                source={require('../../assets/images/chips.png')} 
+                style={{ 
+                  width: currentResponsive.BASE_FONT_SIZE * 1.2, 
+                  height: currentResponsive.BASE_FONT_SIZE * 1.2,
+                  marginRight: 4
+                }} 
+              />
+              <ChipCounter
+                value={finalChipValues.player}
+                responsive={currentResponsive}
+              />
+            </View>
           </View>
+        </View>
         <View style={{ 
           alignSelf: "center", 
           height: currentResponsive.BOARD_HEIGHT, 
           paddingHorizontal: currentResponsive.HORIZONTAL_PADDING * 0.5, 
           justifyContent: "center",
-          position: 'relative'
+          position: 'relative',
+          marginTop: currentResponsive.SECTION_SPACING * 1.3
         }}>
           {/* Player rows with in-row anchors */}
           <Row
@@ -1614,6 +2162,51 @@ export default function Play({ route }) {
           </View>
         </View>
       )}
+
+      {/* Foul badges - positioned on bottom lines */}
+      {showScore && scoreDetail?.a?.foul && (
+        <View style={{
+          position: 'absolute',
+          left: '50%',
+          top: '60%',
+          transform: [{ translateX: '-50%' }],
+          zIndex: 1000,
+          pointerEvents: 'none',
+        }}>
+          <View style={{ 
+            paddingVertical: 6, 
+            paddingHorizontal: 12, 
+            borderRadius: 8, 
+            borderWidth: 1, 
+            borderColor: '#ff6b6b', 
+            backgroundColor: '#ff6b6b20' 
+          }}>
+            <Text style={{ color: '#ff6b6b', fontWeight: '700', fontSize: 14 }}>FOULED</Text>
+          </View>
+        </View>
+      )}
+
+      {showScore && scoreDetail?.b?.foul && (
+        <View style={{
+          position: 'absolute',
+          left: '50%',
+          top: '25%',
+          transform: [{ translateX: '-50%' }],
+          zIndex: 1000,
+          pointerEvents: 'none',
+        }}>
+          <View style={{ 
+            paddingVertical: 4, 
+            paddingHorizontal: 8, 
+            borderRadius: 6, 
+            borderWidth: 1, 
+            borderColor: '#ff6b6b', 
+            backgroundColor: '#ff6b6b20' 
+          }}>
+            <Text style={{ color: '#ff6b6b', fontWeight: '700', fontSize: 12 }}>FOULED</Text>
+          </View>
+        </View>
+      )}
       
       {/* Score Bubbles with Animation */}
       <ScoreBubbles 
@@ -1623,6 +2216,8 @@ export default function Play({ route }) {
         detail={scoreDetail}
         animationStep={scoreAnimationStep}
       />
+      
+
       
       {/* Timer Bar */}
       <TimerBar timer={timer} responsive={currentResponsive} />
@@ -1653,7 +2248,7 @@ function Row({
   const committedCount = committed.length;
   const stagedCount = staged.length;
   const remaining = Math.max(0, capacity - committedCount - stagedCount);
-  const gap = compact ? (responsive.isSmallDevice ? 1 : 2) : responsive.SLOT_GAP;
+  const gap = compact ? (responsive.isSmallDevice ? 0.5 : 1) : responsive.SLOT_GAP;
 
 
 
@@ -1675,7 +2270,7 @@ function Row({
           alignItems: "center",
           paddingVertical: 0,
           borderRadius: 8,
-          borderWidth: highlightRow ? 2 : 0,
+          borderWidth: highlightRow ? 1 : 0,
           borderColor: highlightRow ? colors.accent : "transparent",
           position: 'relative'
         }}
@@ -1702,7 +2297,7 @@ function Row({
               width: responsive.SLOT_W, // Use responsive player card width
               height: responsive.SLOT_H, // Use responsive player card height
               marginRight: gap,
-              borderWidth: responsive.isSmallDevice ? 1.5 : 2,
+              borderWidth: responsive.isSmallDevice ? 1 : 1.5,
               borderColor: highlightRow ? colors.accent : colors.outline,
               borderRadius: responsive.isSmallDevice ? 8 : 10,
               backgroundColor: "rgba(255,255,255,0.05)",

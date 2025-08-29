@@ -30,6 +30,7 @@ export const useGame = create((set, get) => ({
   reveal: null,                                   // { boards, results } at reveal
   nextRoundReady: new Set(),                     // Set of userIds ready for next round
   inFantasyland: false,                          // Whether current player is in fantasyland
+  tableChips: 500,                               // Current chip balance
   
   // Timer state
   timer: {
@@ -317,6 +318,16 @@ export const useGame = create((set, get) => ({
           }
         };
 
+      case "game:end":
+        return {
+          ...s,
+          gameEnd: {
+            winner: data?.winner || null,
+            loser: data?.loser || null,
+            finalChips: data?.finalChips || []
+          }
+        };
+
       case "room:state":
         return {
           ...s,
@@ -344,6 +355,7 @@ export const useGame = create((set, get) => ({
             ready: data.ready ?? s.ready,
             inFantasyland: data.inFantasyland ?? s.inFantasyland,
             roundComplete: data.roundComplete ?? s.roundComplete,
+            tableChips: data.tableChips ?? s.tableChips,
           };
         }
         return s;

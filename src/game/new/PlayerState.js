@@ -3,6 +3,8 @@
  * Handles all player-specific data and operations
  */
 
+import { CHIP_CONSTANTS } from '../constants.js';
+
 export class PlayerState {
   constructor(playerId, name, socketId, inFantasyland = false) {
     this.id = playerId;
@@ -26,7 +28,8 @@ export class PlayerState {
     
     // Chip tracking (for ranked matches)
     this.score = 0;
-    this.tableChips = 500; // Starting chips
+    this.tableChips = CHIP_CONSTANTS.STARTING_CHIPS; // Starting chips
+    console.log(`💰 PLAYER STATE: ${this.name} initialized with ${this.tableChips} chips`);
   }
   
   /**
@@ -200,7 +203,7 @@ export class PlayerState {
     if (this.inFantasyland) {
       return 50000; // 50 seconds for fantasyland
     } else {
-      return 10000; // 10 seconds for normal rounds
+      return 20000; // 20 seconds for normal rounds
     }
   }
   

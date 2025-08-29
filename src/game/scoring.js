@@ -227,14 +227,14 @@ export function settlePairwise(aBoard, bBoard) {
   // Both foul
   if (av.fouled && bv.fouled) return 0;
 
-  // One fouls: fouler pays, non-fouler keeps royalties and gets scoop bonus
+  // One fouls: fouler gets 0, non-fouler wins all 3 rows + royalties + scoop bonus
   if (av.fouled && !bv.fouled) {
     const bRoy = totalRoyalties(bBoard);
-    return -(foulPenalty + scoopBonus) + bRoy;
+    return (rowWin * 3) + bRoy + scoopBonus; // Non-fouler: 3 row wins + royalties + scoop
   }
   if (!av.fouled && bv.fouled) {
     const aRoy = totalRoyalties(aBoard);
-    return +(foulPenalty + scoopBonus) + aRoy;
+    return (rowWin * 3) + aRoy + scoopBonus; // Non-fouler: 3 row wins + royalties + scoop
   }
 
   // Neither foul: compare rows
@@ -278,7 +278,7 @@ export function settlePairwiseDetailed(aBoard, bBoard) {
   // Both foul → 0
   if (av.fouled && bv.fouled) return detail;
 
-  // One fouls: fouler pays, non-fouler keeps royalties AND gets scoop bonus
+  // One fouls: fouler gets 0, non-fouler wins all 3 rows + royalties + scoop bonus
   if (av.fouled && !bv.fouled) {
     const bRoyTop = royaltiesTop(bBoard.top);
     const bRoyMid = royaltiesFive(bBoard.middle, "middle");
@@ -293,8 +293,8 @@ export function settlePairwiseDetailed(aBoard, bBoard) {
     detail.b.lines.middle = +rowWin;
     detail.b.lines.bottom = +rowWin;
     
-    detail.a.total = -(foulPenalty + scoopBonus) + 0;      // A pays penalty + scoop
-    detail.b.total = +(foulPenalty + scoopBonus) + bRoy + (rowWin * 3); // B gets penalty + scoop + royalties + 3 row wins
+    detail.a.total = 0;      // Fouler gets 0 points
+    detail.b.total = (rowWin * 3) + bRoy + detail.b.scoop; // Non-fouler: 3 row wins + royalties + scoop
     return detail;
   }
   if (!av.fouled && bv.fouled) {
@@ -311,8 +311,8 @@ export function settlePairwiseDetailed(aBoard, bBoard) {
     detail.a.lines.middle = +rowWin;
     detail.a.lines.bottom = +rowWin;
     
-    detail.a.total = +(foulPenalty + scoopBonus) + aRoy + (rowWin * 3); // penalty + scoop + royalties + 3 row wins
-    detail.b.total = -(foulPenalty + scoopBonus) + 0;
+    detail.a.total = (rowWin * 3) + aRoy + detail.a.scoop; // Non-fouler: 3 row wins + royalties + scoop
+    detail.b.total = 0;      // Fouler gets 0 points
     return detail;
   }
 

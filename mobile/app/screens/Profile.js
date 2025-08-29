@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { View, Text, TextInput, Button, Alert, Image, Pressable, StyleSheet } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
 import axios from "axios";
 import { SERVER_URL } from "../config/env";
 import { colors } from "../theme/colors";
@@ -30,26 +31,61 @@ export default function Profile() {
     }
   }
 
-  async function pickAvatar() {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert("Permission required", "We need access to your photos to select an avatar.");
-      return;
-    }
-    const res = await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.8, allowsEditing: true, aspect: [1,1] });
-    if (res.canceled) return;
-    const asset = res.assets?.[0];
-    if (!asset?.base64) return;
-    const dataUrl = `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`;
+    async function pickAvatar() {
     try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (!perm.granted) {
+        Alert.alert("Permission required", "We need access to your photos to select an avatar.");
+        return;
+      }
+      
+      // Use lower quality and smaller size for better performance
+      const res = await ImagePicker.launchImageLibraryAsync({ 
+        base64: true, 
+        quality: 0.5, 
+        allowsEditing: true, 
+        aspect: [1,1],
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: false
+      });
+      
+      if (res.canceled) return;
+      const asset = res.assets?.[0];
+      if (!asset?.base64) {
+        Alert.alert("Error", "Could not process image");
+        return;
+      }
+      
+      // Resize image to 250x250 pixels
+      const resizedImage = await ImageManipulator.manipulateAsync(
+        asset.uri,
+        [{ resize: { width: 250, height: 250 } }],
+        { 
+          compress: 0.8, 
+          format: ImageManipulator.SaveFormat.JPEG,
+          base64: true 
+        }
+      );
+      
+      const dataUrl = `data:image/jpeg;base64,${resizedImage.base64}`;
+      
+      // Check if image is too large (should be much smaller now)
+      if (dataUrl.length > 500_000) { // 500KB limit for resized images
+        Alert.alert("Error", "Image is still too large after compression. Please try a different image.");
+        return;
+      }
+      
       const token = await SecureStore.getItemAsync("ofc_jwt");
-      await axios.post(`${SERVER_URL}/me/avatar`, { avatar: dataUrl }, {
+      const response = await axios.post(`${SERVER_URL}/me/avatar`, { avatar: dataUrl }, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      
       setAvatar(dataUrl);
       Alert.alert("Saved", "Avatar updated");
-    } catch {
-      Alert.alert("Error", "Could not update avatar");
+    } catch (error) {
+      console.error("Avatar upload error:", error);
+      Alert.alert("Error", `Could not update avatar: ${error.response?.data?.error || error.message}`);
     }
   }
 
@@ -74,48 +110,59 @@ export default function Profile() {
       <BackButton title="" />
       <Text style={{ color: colors.text, fontSize:20, fontWeight:"800", marginBottom: 12, marginTop: 80 }}>Profile</Text>
 
-      {/* Avatar Section */}
+      {/* Avatar and Username Section */}
       <View style={styles.avatarSection}>
         <Pressable onPress={pickAvatar} style={styles.avatarButton}>
           <View style={styles.avatarCircle}>
             {avatar ? (
               <Image source={{ uri: avatar }} style={styles.avatarImage} />
             ) : (
-              <Text style={styles.avatarInitial}>{(username || 'U').slice(0,1).toUpperCase()}</Text>
+              <View style={styles.avatarPlaceholder}>
+                <Text style={styles.avatarInitial}>{(username || 'U').slice(0,1).toUpperCase()}</Text>
+                <Text style={styles.avatarPlaceholderText}>Tap to change avatar</Text>
+              </View>
             )}
           </View>
-          <Text style={styles.avatarText}>Tap to change avatar</Text>
         </Pressable>
-      </View>
-
-      {/* Username Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Username</Text>
-        <View style={styles.usernameContainer}>
-          <Text style={styles.usernameText}>{username || "Player"}</Text>
-          <Text style={styles.usernameNote}>Username cannot be changed</Text>
+        
+        {/* Username centered under avatar */}
+        <Text style={styles.usernameText}>{username || "Player"}</Text>
+        
+        {/* Chips Display */}
+        <View style={styles.accountNumberContainer}>
+          <Text style={styles.accountNumberLabel}>Chips</Text>
+          <View style={styles.chipDisplay}>
+            <Text style={styles.chipAmount}>{profile?.chips || 1000}</Text>
+            <Image 
+              source={require('../../assets/images/chips.png')} 
+              style={styles.chipIcon} 
+            />
+          </View>
         </View>
       </View>
 
       {/* Stats Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Stats</Text>
-        <View style={styles.statsContainer}>
-          <View style={styles.statRow}>
-            <Text style={styles.statLabel}>RPH:</Text>
-            <Text style={styles.statValue}>{rph}</Text>
+        {/* Header Row */}
+        <View style={styles.headerRow}>
+          <Text style={styles.headerTitle}>Life Time Stats</Text>
+          <Text style={styles.headerSubtitle}>Number of Hands {hands}</Text>
+        </View>
+        
+        {/* Stats Table */}
+        <View style={styles.statsTable}>
+          {/* Table Header */}
+          <View style={styles.tableHeader}>
+            <Text style={styles.headerCell}>Royalties per Hand</Text>
+            <Text style={styles.headerCell}>Fantasy Land %</Text>
+            <Text style={styles.headerCell}>Foul Percentage</Text>
           </View>
-          <View style={styles.statRow}>
-            <Text style={styles.statLabel}>Fantasy Land %:</Text>
-            <Text style={styles.statValue}>{flPct}%</Text>
-          </View>
-          <View style={styles.statRow}>
-            <Text style={styles.statLabel}>Foul %:</Text>
-            <Text style={styles.statValue}>{foulPct}%</Text>
-          </View>
-          <View style={styles.statRow}>
-            <Text style={styles.statLabel}>Hands Played:</Text>
-            <Text style={styles.statValue}>{hands}</Text>
+          
+          {/* Table Row */}
+          <View style={styles.tableRow}>
+            <Text style={styles.tableCell}>{rph}</Text>
+            <Text style={styles.tableCell}>{flPct}%</Text>
+            <Text style={styles.tableCell}>{foulPct}%</Text>
           </View>
         </View>
       </View>
@@ -126,7 +173,7 @@ export default function Profile() {
 const styles = StyleSheet.create({
   avatarSection: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 32,
   },
   avatarButton: {
     alignItems: 'center',
@@ -152,10 +199,50 @@ const styles = StyleSheet.create({
     fontSize: 40,
     fontWeight: 'bold',
     color: colors.text,
+    marginBottom: 4,
   },
-  avatarText: {
+  avatarPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  avatarPlaceholderText: {
+    color: colors.sub,
+    fontSize: 10,
+    textAlign: 'center',
+    paddingHorizontal: 8,
+  },
+  usernameText: {
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  accountNumberContainer: {
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  accountNumberLabel: {
     color: colors.sub,
     fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  chipDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chipAmount: {
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: '700',
+    marginRight: 8,
+  },
+  chipIcon: {
+    width: 24,
+    height: 24,
   },
   section: {
     marginBottom: 24,
@@ -164,45 +251,57 @@ const styles = StyleSheet.create({
     color: colors.sub,
     fontSize: 16,
     fontWeight: '600',
-    marginBottom: 8,
+    marginBottom: 16,
   },
-  usernameContainer: {
-    backgroundColor: colors.panel2,
-    borderWidth: 1,
-    borderColor: colors.outline,
-    borderRadius: 10,
-    padding: 12,
-  },
-  usernameText: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  usernameNote: {
-    color: colors.sub,
-    fontSize: 12,
-    marginTop: 4,
-  },
-  statsContainer: {
-    backgroundColor: colors.panel2,
-    borderWidth: 1,
-    borderColor: colors.outline,
-    borderRadius: 10,
-    padding: 12,
-  },
-  statRow: {
+  headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 4,
+    marginBottom: 12,
+    paddingHorizontal: 4,
   },
-  statLabel: {
+  headerTitle: {
     color: colors.text,
-    fontSize: 14,
+    fontSize: 18,
+    fontWeight: '700',
   },
-  statValue: {
+  headerSubtitle: {
+    color: colors.sub,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  statsTable: {
+    backgroundColor: colors.panel2,
+    borderWidth: 1,
+    borderColor: colors.outline,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: colors.outline,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.outline,
+  },
+  headerCell: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+  },
+  tableRow: {
+    flexDirection: 'row',
+  },
+  tableCell: {
+    flex: 1,
     color: colors.text,
     fontSize: 14,
     fontWeight: '600',
+    textAlign: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 4,
   },
 }); 

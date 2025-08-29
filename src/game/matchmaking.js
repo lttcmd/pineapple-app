@@ -94,49 +94,14 @@ async function checkForMatches(io) {
     const player1Data = engine.addPlayer(player1Id, player1.name, player1.socket.id, false);
     const player2Data = engine.addPlayer(player2Id, player2.name, player2.socket.id, false);
     
-    // Update legacy room data for compatibility
-    room.players.set(player1Id, {
-      userId: player1Id,
-      name: player1Data.name,
-      socketId: player1.socket.id,
-      dbId: player1.dbId, // Add dbId for chip updates
-      board: player1Data.board,
-      hand: player1Data.hand,
-      discards: player1Data.discards,
-      ready: player1Data.ready,
-      currentDeal: player1Data.currentDeal,
-      score: player1Data.score,
-      tableChips: 500, // Initial stake on table
-      inFantasyland: player1Data.inFantasyland,
-      hasPlayedFantasylandHand: player1Data.hasPlayedFantasylandHand,
-      roundComplete: player1Data.roundComplete,
-    });
-    
-    room.players.set(player2Id, {
-      userId: player2Id,
-      name: player2Data.name,
-      socketId: player2.socket.id,
-      dbId: player2.dbId, // Add dbId for chip updates
-      board: player2Data.board,
-      hand: player2Data.hand,
-      discards: player2Data.discards,
-      ready: player2Data.ready,
-      currentDeal: player2Data.currentDeal,
-      score: player2Data.score,
-      tableChips: 500, // Initial stake on table
-      inFantasyland: player2Data.inFantasyland,
-      hasPlayedFantasylandHand: player2Data.hasPlayedFantasylandHand,
-      roundComplete: player2Data.roundComplete,
-    });
-    
     // Emit room state to both players using GameEngine
     engine.emitGameState();
     
     // Auto-start the game for ranked matches
     setTimeout(() => {
       console.log(`🔍 RANKED MATCHMAKING: Auto-starting game for room ${roomId}`);
-      console.log(`🔍 RANKED MATCHMAKING: Players in room:`, [...room.players.keys()]);
-      console.log(`🔍 RANKED MATCHMAKING: Room phase: ${room.phase}`);
+      console.log(`🔍 RANKED MATCHMAKING: Players in room:`, [...engine.gameState.players.keys()]);
+      console.log(`🔍 RANKED MATCHMAKING: Room phase: ${engine.gameState.phase}`);
       
       // Add both players to nextRoundReady set for auto-start
       room.nextRoundReady.add(player1Id);
@@ -164,11 +129,6 @@ async function createRankedRoom(io) {
     id: roomId,
     engine: engine,
     isRanked: true, // Mark as ranked room
-    // Legacy properties for compatibility
-    phase: 'lobby',
-    currentRound: 1,
-    players: new Map(),
-    timer: null,
     nextRoundReady: new Set()
   };
   

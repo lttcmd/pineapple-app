@@ -5,13 +5,17 @@
 
 import { GameState } from './GameState.js';
 import { AutoPlacement } from './AutoPlacement.js';
-import { checkFantasylandEligibility, checkFantasylandContinuation } from '../scoring.js';
+import { checkFantasylandEligibility, checkFantasylandContinuation, settlePairwiseDetailed } from '../scoring.js';
+import { calculateChipChanges, applyChipChanges, checkGameEndConditions, CHIP_CONSTANTS } from '../chipManager.js';
 import { makeDeck, shuffleDeterministic } from '../deck.js';
+import { updateStatsFromReveal } from '../stats.js';
 
 export class GameEngine {
   constructor(roomId) {
     this.gameState = new GameState(roomId);
     this.io = null; // Will be set by setIO method
+    this.onReveal = null; // Callback for reveal events
+    this.onGameEnd = null; // Callback for game end events
   }
   
   /**
@@ -20,6 +24,20 @@ export class GameEngine {
   setIO(io) {
     this.io = io;
   }
+
+  /**
+   * Set callback for reveal events (for stats updates)
+   */
+  setRevealCallback(callback) {
+    this.onReveal = callback;
+  }
+  
+  /**
+   * Set callback for game end events (for cleanup)
+   */
+  setGameEndCallback(callback) {
+    this.onGameEnd = callback;
+  }
   
   /**
    * Add a player to the game
@@ -27,6 +45,7 @@ export class GameEngine {
   addPlayer(playerId, name, socketId, inFantasyland = false) {
     const player = this.gameState.addPlayer(playerId, name, socketId, inFantasyland);
     console.log(`🎮 ENGINE: Added player ${name} (${inFantasyland ? 'Fantasyland' : 'Normal'}) to room ${this.gameState.roomId}`);
+    console.log(`💰 CHIP DEBUG: ${name} starts with ${player.tableChips} chips`);
     return player;
   }
   
@@ -220,7 +239,9 @@ export class GameEngine {
     // Check if we should proceed to reveal
     if (this.gameState.shouldProceedToReveal()) {
       console.log(`🎮 ENGINE: All players ready - proceeding to reveal`);
-      this.proceedToReveal();
+      this.proceedToReveal().catch(error => {
+        console.error('❌ Error in proceedToReveal:', error);
+      });
       return;
     }
     
@@ -290,7 +311,9 @@ export class GameEngine {
     
     if (allReady) {
       console.log(`🎮 ENGINE: All players ready - proceeding to reveal`);
-      this.proceedToReveal();
+      this.proceedToReveal().catch(error => {
+        console.error('❌ Error in proceedToReveal:', error);
+      });
     }
   }
   
@@ -420,7 +443,7 @@ export class GameEngine {
   /**
    * Proceed to reveal phase
    */
-  proceedToReveal() {
+  async proceedToReveal() {
     console.log(`🎮 ENGINE: Proceeding to reveal phase`);
     
     // End the current hand
@@ -471,31 +494,142 @@ export class GameEngine {
       });
     }
     
+    // Calculate scoring and chip changes using centralized chip manager
+    const pairwise = [];
+    const playerIds = Array.from(this.gameState.players.keys());
+    
+    console.log(`\n🎯 SCORING DEBUG: Starting scoring calculation for ${playerIds.length} players`);
+    console.log(`🎯 SCORING DEBUG: Player IDs: ${playerIds.join(', ')}`);
+    
+    // Build pairwise results for detailed breakdown
+    for (let i = 0; i < playerIds.length; i++) {
+      for (let j = i + 1; j < playerIds.length; j++) {
+        const playerAId = playerIds[i];
+        const playerBId = playerIds[j];
+        const playerA = this.gameState.players.get(playerAId);
+        const playerB = this.gameState.players.get(playerBId);
+        
+        if (playerA && playerB) {
+          console.log(`\n🎯 SCORING DEBUG: Comparing ${playerA.name} vs ${playerB.name}`);
+          console.log(`🎯 SCORING DEBUG: ${playerA.name} board - Top: ${playerA.board.top.join(',')}, Middle: ${playerA.board.middle.join(',')}, Bottom: ${playerA.board.bottom.join(',')}`);
+          console.log(`🎯 SCORING DEBUG: ${playerB.name} board - Top: ${playerB.board.top.join(',')}, Middle: ${playerB.board.middle.join(',')}, Bottom: ${playerB.board.bottom.join(',')}`);
+          
+          const detailedResult = settlePairwiseDetailed(playerA.board, playerB.board);
+          
+          console.log(`🎯 SCORING DEBUG: Detailed result for ${playerA.name}:`, {
+            lines: detailedResult.a.lines,
+            scoop: detailedResult.a.scoop,
+            royalties: detailedResult.a.royalties,
+            royaltiesBreakdown: detailedResult.a.royaltiesBreakdown,
+            foul: detailedResult.a.foul,
+            total: detailedResult.a.total
+          });
+          console.log(`🎯 SCORING DEBUG: Detailed result for ${playerB.name}:`, {
+            lines: detailedResult.b.lines,
+            scoop: detailedResult.b.scoop,
+            royalties: detailedResult.b.royalties,
+            royaltiesBreakdown: detailedResult.b.royaltiesBreakdown,
+            foul: detailedResult.b.foul,
+            total: detailedResult.b.total
+          });
+          
+          // Add to pairwise results
+          pairwise.push({
+            aUserId: playerAId,
+            bUserId: playerBId,
+            a: detailedResult.a,
+            b: detailedResult.b
+          });
+          
+          console.log(`🎮 ENGINE: ${playerA.name} vs ${playerB.name}: ${detailedResult.a.total} vs ${detailedResult.b.total} points`);
+        }
+      }
+    }
+    
+    // Use centralized chip manager for all calculations
+    const { results, chipChanges, totalChips } = calculateChipChanges(this.gameState.players);
+    
+    // Apply chip changes using centralized chip manager
+    applyChipChanges(this.gameState.players, chipChanges);
+    
+    // Check for game end conditions using centralized chip manager
+    const gameEndResult = checkGameEndConditions(this.gameState.players);
+    
+    if (gameEndResult) {
+      const { winner, loser } = gameEndResult;
+      console.log(`🎮 ENGINE: Game ended! Winner: ${winner?.name || 'None'}, Loser: ${loser?.name || 'None'}`);
+      
+      // Emit game end event
+      if (this.io) {
+        this.io.to(this.gameState.roomId).emit('game:end', {
+          roomId: this.gameState.roomId,
+          winner: winner ? {
+            userId: winner.userId,
+            name: winner.name,
+            chips: winner.tableChips
+          } : null,
+          loser: loser ? {
+            userId: loser.userId,
+            name: loser.name,
+            chips: loser.tableChips
+          } : null,
+          finalChips: Array.from(this.gameState.players.values()).map(p => ({
+            userId: p.userId,
+            name: p.name,
+            chips: p.tableChips
+          }))
+        });
+      }
+      
+      // End the game and clean up
+      this.endGame();
+      
+      // Don't start next hand - game is over
+      return;
+    }
+    
     // Emit reveal event to all players
     if (this.io) {
       this.io.to(this.gameState.roomId).emit('round:reveal', {
         roomId: this.gameState.roomId,
         handNumber: this.gameState.handNumber - 1,
         boards: boards,
-        results: {}, // TODO: Implement scoring
+        results: results,
+        pairwise: pairwise,
         fantasyland: fantasylandQualifiers
       });
+    }
+    
+    // Update player stats from this hand
+    const revealData = {
+      handNumber: this.gameState.handNumber - 1,
+      pairwise: pairwise,
+      fantasyland: fantasylandQualifiers
+    };
+    
+    // Call reveal callback if set (for stats updates)
+    if (this.onReveal) {
+      try {
+        await this.onReveal(revealData);
+      } catch (error) {
+        console.error('❌ Error in reveal callback:', error);
+      }
     }
     
     // Emit updated game state
     this.emitGameState();
     
-    // Start 10-second timer for auto-advance to next hand
+    // Start 20-second timer for auto-advance to next hand
     setTimeout(() => {
       console.log(`🎮 ENGINE: Reveal timer expired - auto-starting next hand`);
       this.startNewHand();
-    }, 10000);
+    }, 20000);
     
     // Emit reveal timer to all players
     if (this.io) {
       const revealTimer = {
-        deadlineEpochMs: Date.now() + 10000,
-        durationMs: 10000,
+        deadlineEpochMs: Date.now() + 20000,
+        durationMs: 20000,
         phaseType: 'reveal'
       };
       this.io.to(this.gameState.roomId).emit('timer:start', revealTimer);
@@ -537,5 +671,31 @@ export class GameEngine {
     }
     
     return expiredTimers.length > 0;
+  }
+  
+  /**
+   * End the game and clean up resources
+   */
+  endGame() {
+    console.log(`🎮 ENGINE: Ending game for room ${this.gameState.roomId}`);
+    
+    // Stop any active timers
+    this.gameState.stopAllTimers();
+    
+    // Disconnect all players from the room
+    if (this.io) {
+      this.io.in(this.gameState.roomId).disconnectSockets();
+    }
+    
+    // Clean up the engine instance
+    if (this.onGameEnd) {
+      try {
+        this.onGameEnd(this.gameState.roomId);
+      } catch (error) {
+        console.error('❌ Error in game end callback:', error);
+      }
+    }
+    
+    console.log(`🎮 ENGINE: Game ended and cleaned up for room ${this.gameState.roomId}`);
   }
 }

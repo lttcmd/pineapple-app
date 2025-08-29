@@ -6,6 +6,8 @@
 import { GameEngine } from './GameEngine.js';
 import { mem } from '../../store/mem.js';
 import { id } from '../../utils/ids.js';
+import { updateStatsFromReveal } from '../stats.js';
+import { getUserByPhone } from '../../store/database.js';
 
 // Map of room IDs to GameEngine instances
 const engineMap = new Map();
@@ -16,6 +18,10 @@ const engineMap = new Map();
 export function getOrCreateEngine(roomId) {
   if (!engineMap.has(roomId)) {
     const engine = new GameEngine(roomId);
+    // Set reveal callback for stats updates
+    engine.setRevealCallback((revealData) => updateRoomStats(roomId, revealData));
+    // Set game end callback for cleanup
+    engine.setGameEndCallback((roomId) => removeEngine(roomId));
     // We'll set IO later when it's available
     engineMap.set(roomId, engine);
   }
@@ -27,6 +33,36 @@ export function getOrCreateEngine(roomId) {
  */
 function removeEngine(roomId) {
   engineMap.delete(roomId);
+}
+
+/**
+ * Update player stats from reveal data
+ */
+async function updateRoomStats(roomId, revealData) {
+  try {
+    const engine = engineMap.get(roomId);
+    if (!engine) return;
+
+    // Create player mapping (userId -> dbId)
+    const playerMap = new Map();
+    
+    for (const [userId, player] of engine.gameState.players) {
+      const playerData = mem.players.get(userId);
+      if (playerData && playerData.phone) {
+        const dbUser = await getUserByPhone(playerData.phone);
+        if (dbUser) {
+          playerMap.set(userId, dbUser.id);
+        }
+      }
+    }
+
+    if (playerMap.size > 0) {
+      await updateStatsFromReveal(revealData, playerMap);
+      console.log(`✅ Updated stats for room ${roomId} with ${playerMap.size} players`);
+    }
+  } catch (error) {
+    console.error(`❌ Error updating stats for room ${roomId}:`, error);
+  }
 }
 
 /**
@@ -42,12 +78,7 @@ export function createRoomHandler(io, socket) {
   // Store engine reference in mem for compatibility
   mem.rooms.set(roomId, {
     id: roomId,
-    engine: engine,
-    // Legacy properties for compatibility
-    phase: 'lobby',
-    currentRound: 1,
-    players: new Map(),
-    timer: null
+    engine: engine
   });
   
   socket.emit('create-room', { roomId });
@@ -71,22 +102,6 @@ export function joinRoomHandler(io, socket, { roomId, name }) {
   // Join socket room
   socket.join(roomId);
   
-  // Update legacy room data for compatibility
-  roomData.players.set(userId, {
-    userId,
-    name: player.name,
-    socketId: socket.id,
-    board: player.board,
-    hand: player.hand,
-    discards: player.discards,
-    ready: player.ready,
-    currentDeal: player.currentDeal,
-    score: player.score,
-    inFantasyland: player.inFantasyland,
-    hasPlayedFantasylandHand: player.hasPlayedFantasylandHand,
-    roundComplete: player.roundComplete
-  });
-  
   // Emit room state
   engine.emitGameState();
 }
@@ -107,11 +122,8 @@ export function leaveRoomHandler(io, socket, { roomId }) {
   // Leave socket room
   socket.leave(roomId);
   
-  // Update legacy room data
-  roomData.players.delete(userId);
-  
   // Remove room if empty
-  if (roomData.players.size === 0) {
+  if (engine.gameState.players.size === 0) {
     mem.rooms.delete(roomId);
     removeEngine(roomId);
   } else {
@@ -132,25 +144,6 @@ export function startRoundHandler(io, socket, { roomId }) {
   
   // Start new hand
   engine.startNewHand();
-  
-  // Update legacy room data
-  roomData.phase = engine.gameState.phase;
-  roomData.currentRound = engine.gameState.currentRound;
-  
-  // Update player data in legacy format
-  for (const [userId, player] of engine.gameState.players) {
-    if (roomData.players.has(userId)) {
-      const legacyPlayer = roomData.players.get(userId);
-      legacyPlayer.board = player.board;
-      legacyPlayer.hand = player.hand;
-      legacyPlayer.discards = player.discards;
-      legacyPlayer.ready = player.ready;
-      legacyPlayer.currentDeal = player.currentDeal;
-      legacyPlayer.inFantasyland = player.inFantasyland;
-      legacyPlayer.hasPlayedFantasylandHand = player.hasPlayedFantasylandHand;
-      legacyPlayer.roundComplete = player.roundComplete;
-    }
-  }
 }
 
 /**
@@ -179,21 +172,6 @@ export function readyHandler(io, socket, { roomId, placements, discard }) {
   
   console.log(`🎯 SERVER: handlePlayerReady succeeded for user ${userId}`);
   
-  // Update legacy room data
-  const player = engine.gameState.getPlayer(userId);
-  if (player && roomData.players.has(userId)) {
-    const legacyPlayer = roomData.players.get(userId);
-    legacyPlayer.board = player.board;
-    legacyPlayer.hand = player.hand;
-    legacyPlayer.discards = player.discards;
-    legacyPlayer.ready = player.ready;
-    legacyPlayer.currentDeal = player.currentDeal;
-    legacyPlayer.roundComplete = player.roundComplete;
-  }
-  
-  roomData.phase = engine.gameState.phase;
-  roomData.currentRound = engine.gameState.currentRound;
-  
   // Emit updated game state
   engine.emitGameState();
 }
@@ -217,13 +195,6 @@ export function placeHandler(io, socket, { roomId, placements }) {
   
   // Apply placements
   player.placeCards(placements);
-  
-  // Update legacy room data
-  if (roomData.players.has(userId)) {
-    const legacyPlayer = roomData.players.get(userId);
-    legacyPlayer.board = player.board;
-    legacyPlayer.hand = player.hand;
-  }
   
   // Emit updated state
   engine.emitGameState();
@@ -249,13 +220,6 @@ export function discardHandler(io, socket, { roomId, card }) {
   // Apply discard
   player.discardCard(card);
   
-  // Update legacy room data
-  if (roomData.players.has(userId)) {
-    const legacyPlayer = roomData.players.get(userId);
-    legacyPlayer.hand = player.hand;
-    legacyPlayer.discards = player.discards;
-  }
-  
   // Emit updated state
   engine.emitGameState();
 }
@@ -272,28 +236,7 @@ export function getRoomById(roomId) {
  */
 export function checkExpiredTimers() {
   for (const [roomId, engine] of engineMap) {
-    const hasExpired = engine.checkExpiredTimers();
-    if (hasExpired) {
-      // Update legacy room data after timer expiration
-      const roomData = mem.rooms.get(roomId);
-      if (roomData) {
-        roomData.phase = engine.gameState.phase;
-        roomData.currentRound = engine.gameState.currentRound;
-        
-        // Update player data
-        for (const [userId, player] of engine.gameState.players) {
-          if (roomData.players.has(userId)) {
-            const legacyPlayer = roomData.players.get(userId);
-            legacyPlayer.board = player.board;
-            legacyPlayer.hand = player.hand;
-            legacyPlayer.discards = player.discards;
-            legacyPlayer.ready = player.ready;
-            legacyPlayer.currentDeal = player.currentDeal;
-            legacyPlayer.roundComplete = player.roundComplete;
-          }
-        }
-      }
-    }
+    engine.checkExpiredTimers();
   }
 }
 
