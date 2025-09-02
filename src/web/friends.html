@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Friends - OFC Pineapple</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a1a;
+            color: #ffffff;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-top: 20px;
+        }
+
+        .title {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #ffffff;
+        }
+
+        .subtitle {
+            font-size: 1.1rem;
+            color: #888888;
+        }
+
+        .back-button {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: #333333;
+            border: 1px solid #555555;
+            color: #ffffff;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .back-button:hover {
+            background: #444444;
+        }
+
+        .panel {
+            background: #2a2a2a;
+            border: 1px solid #555555;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #ffffff;
+        }
+
+        .add-friend-input {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .username-input {
+            flex: 1;
+            background: #333333;
+            border: 1px solid #555555;
+            border-radius: 8px;
+            padding: 12px;
+            color: #ffffff;
+            font-size: 16px;
+        }
+
+        .username-input::placeholder {
+            color: #888888;
+        }
+
+        .btn {
+            background: #007AFF;
+            color: #ffffff;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        .btn:hover {
+            background: #0056CC;
+        }
+
+        .btn:disabled {
+            background: #555555;
+            cursor: not-allowed;
+        }
+
+        .btn-danger {
+            background: #FF3B30;
+        }
+
+        .btn-danger:hover {
+            background: #CC2E26;
+        }
+
+        .btn-success {
+            background: #34C759;
+        }
+
+        .btn-success:hover {
+            background: #28A745;
+        }
+
+        .friend-item, .request-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background: #333333;
+            border-radius: 10px;
+            margin-bottom: 10px;
+        }
+
+        .friend-info, .request-info {
+            flex: 1;
+        }
+
+        .friend-username, .request-username {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #ffffff;
+        }
+
+        .friend-status, .request-text {
+            font-size: 0.9rem;
+            color: #888888;
+        }
+
+        .request-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-small {
+            padding: 8px 16px;
+            font-size: 14px;
+            min-width: 70px;
+        }
+
+        .no-friends-text {
+            text-align: center;
+            color: #888888;
+            font-style: italic;
+            padding: 40px;
+        }
+
+        .loading {
+            text-align: center;
+            color: #888888;
+            padding: 20px;
+        }
+
+        .error {
+            background: #FF3B30;
+            color: #ffffff;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        .success {
+            background: #34C759;
+            color: #ffffff;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <a href="lobby.html" class="back-button">← Back</a>
+    
+    <div class="container">
+        <div class="header">
+            <h1 class="title">Friends</h1>
+            <p class="subtitle">Connect with other players</p>
+        </div>
+
+        <!-- Add Friend Section -->
+        <div class="panel">
+            <h2 class="section-title">Add Friend</h2>
+            <div class="add-friend-input">
+                <input 
+                    type="text" 
+                    id="usernameInput" 
+                    class="username-input" 
+                    placeholder="Enter username"
+                    maxlength="20"
+                >
+                <button id="addFriendBtn" class="btn">Add</button>
+            </div>
+        </div>
+
+        <!-- Pending Requests Section -->
+        <div id="requestsPanel" class="panel" style="display: none;">
+            <h2 class="section-title">Pending Requests (<span id="requestsCount">0</span>)</h2>
+            <div id="requestsList"></div>
+        </div>
+
+        <!-- Friends List Section -->
+        <div class="panel">
+            <h2 class="section-title">Friends (<span id="friendsCount">0</span>)</h2>
+            <div id="friendsList">
+                <div class="no-friends-text">No friends yet. Add some friends to get started!</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let friends = [];
+        let pendingRequests = [];
+
+        // Load friends and requests on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadFriends();
+            loadPendingRequests();
+        });
+
+        // Add friend functionality
+        document.getElementById('addFriendBtn').addEventListener('click', addFriend);
+        document.getElementById('usernameInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') addFriend();
+        });
+
+        async function loadFriends() {
+            try {
+                const token = localStorage.getItem('ofc_jwt');
+                if (!token) return;
+
+                const response = await fetch('/friends', {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                
+                if (response.ok) {
+                    friends = await response.json();
+                    renderFriends();
+                }
+            } catch (error) {
+                console.error('Error loading friends:', error);
+            }
+        }
+
+        async function loadPendingRequests() {
+            try {
+                const token = localStorage.getItem('ofc_jwt');
+                if (!token) return;
+
+                const response = await fetch('/friends/requests', {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                
+                if (response.ok) {
+                    pendingRequests = await response.json();
+                    renderRequests();
+                }
+            } catch (error) {
+                console.error('Error loading pending requests:', error);
+            }
+        }
+
+        async function addFriend() {
+            const username = document.getElementById('usernameInput').value.trim();
+            if (!username) {
+                showMessage('Please enter a username', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('addFriendBtn');
+            btn.disabled = true;
+            btn.textContent = 'Adding...';
+
+            try {
+                const token = localStorage.getItem('ofc_jwt');
+                if (!token) return;
+
+                const response = await fetch('/friends/request', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ username })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    showMessage(`Friend request sent to ${username}`, 'success');
+                    document.getElementById('usernameInput').value = '';
+                } else {
+                    showMessage(data.error || 'Failed to send friend request', 'error');
+                }
+            } catch (error) {
+                console.error('Error adding friend:', error);
+                showMessage('Failed to send friend request', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Add';
+            }
+        }
+
+        async function respondToRequest(requestId, accept) {
+            try {
+                const token = localStorage.getItem('ofc_jwt');
+                if (!token) return;
+
+                const response = await fetch('/friends/respond', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ requestId, accept })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    showMessage(accept ? 'Friend request accepted!' : 'Friend request declined', 'success');
+                    loadFriends();
+                    loadPendingRequests();
+                }
+            } catch (error) {
+                console.error('Error responding to request:', error);
+                showMessage('Failed to respond to friend request', 'error');
+            }
+        }
+
+        async function removeFriend(friendId) {
+            if (!confirm('Are you sure you want to remove this friend?')) return;
+
+            try {
+                const token = localStorage.getItem('ofc_jwt');
+                if (!token) return;
+
+                const response = await fetch(`/friends/${friendId}`, {
+                    method: 'DELETE',
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    showMessage('Friend removed', 'success');
+                    loadFriends();
+                }
+            } catch (error) {
+                console.error('Error removing friend:', error);
+                showMessage('Failed to remove friend', 'error');
+            }
+        }
+
+        function renderFriends() {
+            const friendsList = document.getElementById('friendsList');
+            const friendsCount = document.getElementById('friendsCount');
+            
+            friendsCount.textContent = friends.length;
+
+            if (friends.length === 0) {
+                friendsList.innerHTML = '<div class="no-friends-text">No friends yet. Add some friends to get started!</div>';
+                return;
+            }
+
+            friendsList.innerHTML = friends.map(friend => `
+                <div class="friend-item">
+                    <div class="friend-info">
+                        <div class="friend-username">${friend.username}</div>
+                        <div class="friend-status">${friend.online ? '🟢 Online' : '⚫ Offline'}</div>
+                    </div>
+                    <button class="btn btn-danger btn-small" onclick="removeFriend(${friend.id})">Remove</button>
+                </div>
+            `).join('');
+        }
+
+        function renderRequests() {
+            const requestsPanel = document.getElementById('requestsPanel');
+            const requestsList = document.getElementById('requestsList');
+            const requestsCount = document.getElementById('requestsCount');
+            
+            requestsCount.textContent = pendingRequests.length;
+
+            if (pendingRequests.length === 0) {
+                requestsPanel.style.display = 'none';
+                return;
+            }
+
+            requestsPanel.style.display = 'block';
+            requestsList.innerHTML = pendingRequests.map(request => `
+                <div class="request-item">
+                    <div class="request-info">
+                        <div class="request-username">${request.username}</div>
+                        <div class="request-text">wants to be your friend</div>
+                    </div>
+                    <div class="request-buttons">
+                        <button class="btn btn-success btn-small" onclick="respondToRequest(${request.id}, true)">Accept</button>
+                        <button class="btn btn-danger btn-small" onclick="respondToRequest(${request.id}, false)">Decline</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function showMessage(message, type) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = type;
+            messageDiv.textContent = message;
+            
+            const container = document.querySelector('.container');
+            container.insertBefore(messageDiv, container.firstChild);
+            
+            setTimeout(() => {
+                messageDiv.remove();
+            }, 5000);
+        }
+    </script>
+</body>
+</html>

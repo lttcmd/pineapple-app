@@ -88,26 +88,69 @@ export default function Lobby({ navigation }) {
     return () => off();
   }, [username]);
 
-  const handleSignOut = async () => {
-    try {
-      // Clear all stored data
-      await SecureStore.deleteItemAsync("ofc_jwt");
-      await SecureStore.deleteItemAsync("ofc_userId");
-      await SecureStore.deleteItemAsync("ofc_phone");
-      
-      // Navigate back to login screen
-      navigation.reset({
-        index: 0,
-        routes: [{ name: "AuthPhone" }],
-      });
-    } catch (error) {
-      console.error("Error signing out:", error);
-    }
-  };
+
 
   return (
     <View style={{ flex:1, backgroundColor: colors.bg, padding:16, gap:12 }}>
-      <BackButton title="Sign Out" onPress={handleSignOut} />
+      <Pressable 
+        onPress={() => navigation.navigate("Settings")}
+        style={{
+          position: "absolute",
+          top: 60,
+          left: 16,
+          zIndex: 1000,
+          paddingVertical: 8,
+          paddingHorizontal: 12,
+          borderRadius: 20,
+          backgroundColor: colors.panel2,
+          borderWidth: 1,
+          borderColor: colors.outline,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Text style={{ fontSize: 20, color: colors.text }}>⚙️</Text>
+      </Pressable>
+
+      <Pressable 
+        onPress={() => navigation.navigate("Friends")}
+        style={{
+          position: "absolute",
+          top: 60,
+          right: 80,
+          zIndex: 1000,
+          paddingVertical: 8,
+          paddingHorizontal: 12,
+          borderRadius: 20,
+          backgroundColor: colors.panel2,
+          borderWidth: 1,
+          borderColor: colors.outline,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Text style={{ fontSize: 20, color: colors.text }}>👥</Text>
+      </Pressable>
+
+      <Pressable 
+        onPress={() => navigation.navigate("Leaderboard")}
+        style={{
+          position: "absolute",
+          top: 60,
+          right: 16,
+          zIndex: 1000,
+          paddingVertical: 8,
+          paddingHorizontal: 12,
+          borderRadius: 20,
+          backgroundColor: colors.panel2,
+          borderWidth: 1,
+          borderColor: colors.outline,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Text style={{ fontSize: 20, color: colors.text }}>🏆</Text>
+      </Pressable>
       
       {/* Profile Section */}
       <View style={styles.profileSection}>
@@ -123,10 +166,6 @@ export default function Lobby({ navigation }) {
           <Text style={styles.chipCount}>{chips.toLocaleString()} chips</Text>
         </Pressable>
       </View>
-
-      <Panel style={{ gap:10 }}>
-        <Button title="Create Room" onPress={() => emit("room:create")} />
-      </Panel>
 
       <Panel style={{ gap:10 }}>
         <Button 
@@ -145,6 +184,12 @@ export default function Lobby({ navigation }) {
           </Text>
         )}
       </Panel>
+
+      <Panel style={{ gap:10 }}>
+        <Button title="Create Room" onPress={() => emit("room:create")} />
+      </Panel>
+
+
 
       <Panel style={{ gap:10 }}>
         <Text style={{ color: colors.sub }}>4-Digit Room Code</Text>

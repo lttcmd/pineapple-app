@@ -14,6 +14,9 @@ import Room from "./app/screens/Room";
 import Play from "./app/screens/Play";
 import Profile from "./app/screens/Profile";
 import Searching from "./app/screens/Searching";
+import Leaderboard from "./app/screens/Leaderboard";
+import Settings from "./app/screens/Settings";
+import Friends from "./app/screens/Friends";
 import { initSfx } from "./app/sound/sfx";
 
 const Stack = createNativeStackNavigator();
@@ -51,6 +54,9 @@ export default function App() {
             <Stack.Screen name="Play" component={Play} />
             <Stack.Screen name="Profile" component={Profile} />
             <Stack.Screen name="Searching" component={Searching} />
+            <Stack.Screen name="Leaderboard" component={Leaderboard} />
+            <Stack.Screen name="Settings" component={Settings} />
+            <Stack.Screen name="Friends" component={Friends} />
           </Stack.Navigator>
         </NavigationContainer>
       </DragProvider>

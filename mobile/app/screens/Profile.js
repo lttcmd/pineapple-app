@@ -165,6 +165,37 @@ export default function Profile() {
             <Text style={styles.tableCell}>{foulPct}%</Text>
           </View>
         </View>
+        
+        {/* New Stats Section */}
+        <View style={styles.newStatsSection}>
+          <Text style={styles.newStatsTitle}>Performance Stats</Text>
+          <View style={styles.newStatsGrid}>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Hands Won</Text>
+              <Text style={styles.statValue}>{profile?.stats?.handsWon || 0}</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Win Rate</Text>
+              <Text style={styles.statValue}>
+                {hands > 0 ? Math.round(((profile?.stats?.handsWon || 0) / hands) * 100) : 0}%
+              </Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Matches Played</Text>
+              <Text style={styles.statValue}>{profile?.stats?.matchesPlayed || 0}</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Matches Won</Text>
+              <Text style={styles.statValue}>{profile?.stats?.matchesWon || 0}</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Match Win Rate</Text>
+              <Text style={styles.statValue}>
+                {profile?.stats?.matchesPlayed > 0 ? Math.round(((profile?.stats?.matchesWon || 0) / profile?.stats?.matchesPlayed) * 100) : 0}%
+              </Text>
+            </View>
+          </View>
+        </View>
       </View>
     </View>
   );
@@ -303,5 +334,41 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingVertical: 12,
     paddingHorizontal: 4,
+  },
+  newStatsSection: {
+    marginTop: 24,
+    backgroundColor: colors.panel2,
+    borderWidth: 1,
+    borderColor: colors.outline,
+    borderRadius: 10,
+    padding: 16,
+  },
+  newStatsTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  newStatsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+  },
+  statItem: {
+    alignItems: 'center',
+    marginVertical: 8,
+    width: '45%', // Adjust as needed for 2 columns
+  },
+  statLabel: {
+    color: colors.sub,
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  statValue: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '700',
   },
 }); 

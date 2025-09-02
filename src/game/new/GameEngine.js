@@ -559,6 +559,15 @@ export class GameEngine {
       const { winner, loser } = gameEndResult;
       console.log(`🎮 ENGINE: Game ended! Winner: ${winner?.name || 'None'}, Loser: ${loser?.name || 'None'}`);
       
+      // Call game end callback if set (for match stats updates)
+      if (this.onGameEnd) {
+        try {
+          await this.onGameEnd(gameEndResult);
+        } catch (error) {
+          console.error('❌ Error in game end callback:', error);
+        }
+      }
+      
       // Emit game end event
       if (this.io) {
         this.io.to(this.gameState.roomId).emit('game:end', {

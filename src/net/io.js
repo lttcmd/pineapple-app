@@ -13,6 +13,22 @@ import {
 
 let ioInstance = null;
 
+// Track online users for friends system
+const onlineUsers = new Map(); // userId -> { socket, lastSeen }
+const onlineUserIds = new Set(); // userId
+
+export function getOnlineUsers() {
+  return onlineUsers;
+}
+
+export function getOnlineUserIds() {
+  return onlineUserIds;
+}
+
+export function isUserOnline(userId) {
+  return onlineUsers.has(userId);
+}
+
 export function attachIO(httpServer) {
   const io = new Server(httpServer, { cors: { origin: "*" } });
   ioInstance = io;
@@ -32,6 +48,14 @@ export function attachIO(httpServer) {
 
   io.on("connection", (socket) => {
     console.log(`🔌 SOCKET: Client connected: ${socket.user.sub}`);
+    
+    // Add user to online users map
+    onlineUsers.set(socket.user.sub, {
+      socket,
+      lastSeen: Date.now()
+    });
+    onlineUserIds.add(socket.user.sub);
+    
     socket.emit(Events.AUTH_OK, { userId: socket.user.sub });
 
     socket.on(Events.CREATE_ROOM, () => {
@@ -119,6 +143,8 @@ export function attachIO(httpServer) {
       try {
         console.log(`🔌 SOCKET: Client disconnected: ${socket.user.sub}`);
         cleanupDisconnectedPlayer(socket.user.sub);
+        onlineUsers.delete(socket.user.sub);
+        onlineUserIds.delete(socket.user.sub);
       } catch (error) {
         console.error('Error in disconnect handler:', error);
       }

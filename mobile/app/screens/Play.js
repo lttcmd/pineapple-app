@@ -239,11 +239,11 @@ function TimerBar({ timer, responsive }) {
     if (timer.isActive && timer.deadlineEpochMs) {
       const updateProgress = () => {
         const now = Date.now();
-        const elapsed = now - (timer.deadlineEpochMs - timer.durationMs);
-        const newProgress = Math.min(1, Math.max(0, elapsed / timer.durationMs));
+        const timeLeft = Math.max(0, timer.deadlineEpochMs - now);
+        const newProgress = Math.min(1, Math.max(0, timeLeft / timer.durationMs));
         setProgress(newProgress);
         
-        // Animate the width
+        // Animate the width (newProgress is 1 when full time, 0 when no time)
         Animated.timing(animatedWidth, {
           toValue: newProgress,
           duration: 100, // Smooth animation
@@ -272,10 +272,10 @@ function TimerBar({ timer, responsive }) {
   // Don't render if timer is not active
   if (!timer.isActive) return null;
   
-  // Calculate color based on progress
+  // Calculate color based on progress (progress now represents remaining time)
   const getTimerColor = () => {
-    if (progress > 0.25) return '#FFD700'; // Yellow (100-25%)
-    return '#FF4444'; // Red (25-0%)
+    if (progress > 0.25) return '#FFD700'; // Yellow (100-25% remaining)
+    return '#FF4444'; // Red (25-0% remaining)
   };
   
   return (
@@ -291,11 +291,11 @@ function TimerBar({ timer, responsive }) {
       <Animated.View style={{
         position: 'absolute',
         top: 0,
-        right: 0,
+        left: 0,
         height: '100%',
         width: animatedWidth.interpolate({
           inputRange: [0, 1],
-          outputRange: ['0%', '100%'],
+          outputRange: ['0%', '100%'], // 0 = empty, 1 = full
         }),
         backgroundColor: getTimerColor(),
         borderRadius: 2,
@@ -1663,9 +1663,10 @@ export default function Play({ route }) {
         <Text style={{ 
           color: colors.text, 
           fontSize: 12, 
-          fontWeight: '600' 
+          fontWeight: '600',
+          textAlign: 'center'
         }}>
-          Test Reveal
+          WARNING:{'\n'}Test Reveal
         </Text>
       </Pressable>
       

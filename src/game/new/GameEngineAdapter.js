@@ -7,7 +7,7 @@ import { GameEngine } from './GameEngine.js';
 import { mem } from '../../store/mem.js';
 import { id } from '../../utils/ids.js';
 import { updateStatsFromReveal } from '../stats.js';
-import { getUserByPhone } from '../../store/database.js';
+import { getUserByPhone, recordMatchEnd } from '../../store/database.js';
 
 // Map of room IDs to GameEngine instances
 const engineMap = new Map();
@@ -18,10 +18,9 @@ const engineMap = new Map();
 export function getOrCreateEngine(roomId) {
   if (!engineMap.has(roomId)) {
     const engine = new GameEngine(roomId);
-    // Set reveal callback for stats updates
+    // Set up callbacks for stats tracking
     engine.setRevealCallback((revealData) => updateRoomStats(roomId, revealData));
-    // Set game end callback for cleanup
-    engine.setGameEndCallback((roomId) => removeEngine(roomId));
+    engine.setGameEndCallback((gameEndResult) => updateMatchStats(roomId, gameEndResult));
     // We'll set IO later when it's available
     engineMap.set(roomId, engine);
   }
@@ -62,6 +61,46 @@ async function updateRoomStats(roomId, revealData) {
     }
   } catch (error) {
     console.error(`❌ Error updating stats for room ${roomId}:`, error);
+  }
+}
+
+/**
+ * Update match stats when a ranked match ends
+ */
+async function updateMatchStats(roomId, gameEndResult) {
+  try {
+    const engine = engineMap.get(roomId);
+    if (!engine) return;
+
+    // Only track stats for ranked matches
+    const roomData = mem.rooms.get(roomId);
+    if (!roomData || !roomData.isRanked) return;
+
+    const { winner, loser } = gameEndResult;
+    if (!winner || !loser) return;
+
+    // Create player mapping (userId -> dbId)
+    const playerMap = new Map();
+    
+    for (const [userId, player] of engine.gameState.players) {
+      const playerData = mem.players.get(userId);
+      if (playerData && playerData.phone) {
+        const dbUser = await getUserByPhone(playerData.phone);
+        if (dbUser) {
+          playerMap.set(userId, dbUser.id);
+        }
+      }
+    }
+
+    const winnerDbId = playerMap.get(winner.userId);
+    const loserDbId = playerMap.get(loser.userId);
+
+    if (winnerDbId && loserDbId) {
+      await recordMatchEnd(winnerDbId, loserDbId);
+      console.log(`✅ Recorded match end stats for room ${roomId}: Winner ${winner.name}, Loser ${loser.name}`);
+    }
+  } catch (error) {
+    console.error(`❌ Error updating match stats for room ${roomId}:`, error);
   }
 }
 

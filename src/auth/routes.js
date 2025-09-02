@@ -1,7 +1,12 @@
 import { Router } from "express";
 import { sendOtp, verifyOtp } from "./service.js";
 import { mem } from "../store/mem.js";
-import { setUsername, getUserByUsername, getUserByPhone, setAvatar, getUserChips, getUserById, getPlayerStats } from "../store/database.js";
+import { 
+  getUserByPhone, createUser, setUsername, setAvatar, 
+  sendFriendRequest, getFriendRequests, respondToFriendRequest, 
+  getFriends, removeFriend, getUserByUsername, getUserChips, getPlayerStats, getLeaderboard
+} from "../store/database.js";
+import { getOnlineUsers, getOnlineUserIds } from "../net/io.js";
 
 export const authRoutes = Router();
 
@@ -188,5 +193,157 @@ authRoutes.post("/me/name", (req, res) => {
     res.json({ ok: true });
   } catch {
     res.status(401).json({ error: "invalid token" });
+  }
+});
+
+// Get leaderboard
+authRoutes.get("/leaderboard", async (req, res) => {
+  const auth = req.headers.authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+  
+  if (!token) return res.status(401).json({ error: "missing token" });
+  
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+    const dbId = payload.dbId;
+    
+    if (!dbId) {
+      return res.status(400).json({ error: "invalid token" });
+    }
+
+    // Get leaderboard data from database
+    const leaderboard = await getLeaderboard();
+    
+    res.json(leaderboard);
+  } catch (error) {
+    console.error('Error getting leaderboard:', error);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+// Friends system routes
+// Send friend request
+authRoutes.post("/friends/request", async (req, res) => {
+  const auth = req.headers.authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+  const { username } = req.body || {};
+  
+  if (!token) return res.status(401).json({ error: "missing token" });
+  if (!username) return res.status(400).json({ error: "missing username" });
+  
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+    const dbId = payload.dbId;
+    
+    if (!dbId) {
+      return res.status(400).json({ error: "invalid token" });
+    }
+
+    const result = await sendFriendRequest(dbId, username);
+    res.json({ success: true, message: result.message });
+  } catch (error) {
+    console.error('Error sending friend request:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Get pending friend requests
+authRoutes.get("/friends/requests", async (req, res) => {
+  const auth = req.headers.authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+  
+  if (!token) return res.status(401).json({ error: "missing token" });
+  
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+    const dbId = payload.dbId;
+    
+    if (!dbId) {
+      return res.status(400).json({ error: "invalid token" });
+    }
+
+    const requests = await getFriendRequests(dbId);
+    res.json(requests);
+  } catch (error) {
+    console.error('Error getting friend requests:', error);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+// Respond to friend request
+authRoutes.post("/friends/respond", async (req, res) => {
+  const auth = req.headers.authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+  const { requestId, accept } = req.body || {};
+  
+  if (!token) return res.status(401).json({ error: "missing token" });
+  if (!requestId) return res.status(400).json({ error: "missing request id" });
+  if (typeof accept !== 'boolean') return res.status(400).json({ error: "missing accept parameter" });
+  
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+    const dbId = payload.dbId;
+    
+    if (!dbId) {
+      return res.status(400).json({ error: "invalid token" });
+    }
+
+    const result = await respondToFriendRequest(requestId, accept);
+    res.json(result);
+  } catch (error) {
+    console.error('Error responding to friend request:', error);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+// Get friends list
+authRoutes.get("/friends", async (req, res) => {
+  const auth = req.headers.authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+  
+  if (!token) return res.status(401).json({ error: "missing token" });
+  
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+    const dbId = payload.dbId;
+    
+    if (!dbId) {
+      return res.status(400).json({ error: "invalid token" });
+    }
+
+    // Get online users for real-time status
+    const onlineUserIds = getOnlineUserIds();
+    console.log('Friends API - Online user IDs:', Array.from(onlineUserIds));
+    const friends = await getFriends(dbId, onlineUserIds);
+    console.log('Friends API - Friends with status:', friends.map(f => ({ username: f.username, online: f.online })));
+    res.json(friends);
+  } catch (error) {
+    console.error('Error getting friends:', error);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+// Remove friend
+authRoutes.delete("/friends/:friendId", async (req, res) => {
+  const auth = req.headers.authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+  const { friendId } = req.params;
+  
+  if (!token) return res.status(401).json({ error: "missing token" });
+  if (!friendId) return res.status(400).json({ error: "missing friend id" });
+  
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+    const dbId = payload.dbId;
+    
+    if (!dbId) {
+      return res.status(400).json({ error: "invalid token" });
+    }
+
+    const result = await removeFriend(dbId, parseInt(friendId));
+    res.json(result);
+  } catch (error) {
+    console.error('Error removing friend:', error);
+    res.status(500).json({ error: "server error" });
   }
 });

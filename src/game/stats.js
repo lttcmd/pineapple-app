@@ -10,7 +10,7 @@ import { updatePlayerStats } from "../store/database.js";
  */
 export async function updateStatsFromReveal(revealData, playerMap) {
   if (!revealData || !revealData.pairwise || !playerMap) {
-    console.log('Invalid data for stats update:', { revealData, playerMap });
+    console.log('Invalid data for stats update:', revealData, playerMap);
     return;
   }
 
@@ -25,7 +25,8 @@ export async function updateStatsFromReveal(revealData, playerMap) {
       handsPlayed: 1, // Each player played one hand
       royaltiesTotal: 0,
       fantasyEntrances: 0,
-      fouls: 0
+      fouls: 0,
+      handsWon: 0 // Will be updated based on results
     });
   }
 
@@ -54,6 +55,18 @@ export async function updateStatsFromReveal(revealData, playerMap) {
     
     if (aStats) aStats.royaltiesTotal += aRoyalties;
     if (bStats) bStats.royaltiesTotal += bRoyalties;
+    
+    // Determine who won the hand (even by 1 point)
+    const aTotal = (playerA.lines?.top || 0) + (playerA.lines?.middle || 0) + (playerA.lines?.bottom || 0) + aRoyalties;
+    const bTotal = (playerB.lines?.top || 0) + (playerB.lines?.middle || 0) + (playerB.lines?.bottom || 0) + bRoyalties;
+    
+    // Award hand win to the player with higher total (even if just 1 point difference)
+    if (aTotal > bTotal) {
+      if (aStats) aStats.handsWon = 1;
+    } else if (bTotal > aTotal) {
+      if (bStats) bStats.handsWon = 1;
+    }
+    // If tied, no one gets a hand win
   }
 
   // Check for Fantasy Land entries
