@@ -124,7 +124,7 @@ function displayGameState() {
 // Start the game
 console.log('🎮 Starting Mixed Mode Game...');
 console.log('Player A: Fantasyland (14 cards, 50s timer)');
-console.log('Player B: Normal (5 cards, 15s timer)');
+console.log('Player B: Normal (5 cards, 10s timer)');
 
 // Start individual timers
 startPlayerTimer(playerA, 'fantasyland');

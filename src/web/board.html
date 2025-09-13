@@ -547,6 +547,48 @@
         log("Next round ready update: " + [...nextRoundReady].join(', '));
       });
 
+      socket.on("game:end", (data) => {
+        console.log("🎯 WEB APP: Game ended:", data);
+        log(`🏆 GAME END: ${data.winner ? 'Winner: ' + data.winner.name : 'No winner'}`);
+        
+        // Show game end message
+        showGameEndMessage(data);
+      });
+
+      // Game end message
+      function showGameEndMessage(data) {
+        const isWinner = data.winner && data.winner.userId === myUserId;
+        const isLoser = data.loser && data.loser.userId === myUserId;
+        
+        const message = isWinner 
+          ? '🎉 Congratulations! You win! 1000 chips added to your chip balance.'
+          : isLoser 
+            ? '😔 Unlucky! You lost... you\'ve lost 500 chips from your chip balance.'
+            : 'Game Over';
+        
+        // Update the reveal panel with game end message
+        const revealPanel = $('revealPanel');
+        revealPanel.innerHTML = `
+          <div style="text-align: center; padding: 20px; background: #1b2030; border-radius: 10px; border: 2px solid ${isWinner ? '#4CAF50' : isLoser ? '#F44336' : '#2a3244'};">
+            <h3 style="margin: 0 0 15px 0; color: ${isWinner ? '#4CAF50' : isLoser ? '#F44336' : '#e7e8ea'};">
+              ${isWinner ? '🎉 Congratulations!' : isLoser ? '😔 Unlucky!' : 'Game Over'}
+            </h3>
+            <p style="margin: 0 0 15px 0; color: #e7e8ea;">
+              ${message}
+            </p>
+            <div style="margin-bottom: 15px;">
+              <span style="color: #e7e8ea;">Final chips: </span>
+              <span style="font-weight: bold; color: #e7e8ea;">
+                ${data.finalChips?.find(p => p.userId === myUserId)?.chips || 500}
+              </span>
+            </div>
+            <button onclick="window.location.href='/lobby.html'" style="background: #7ee787; color: #0f1115; padding: 8px 16px; border: none; border-radius: 8px; cursor: pointer;">
+              Return to Lobby
+            </button>
+          </div>
+        `;
+      }
+
       socket.on("error:msg", (e) => log("ERROR " + e.message));
     };
 

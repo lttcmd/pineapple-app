@@ -1034,7 +1034,7 @@ export default function Play({ route }) {
   const gameEnd = useGame(state => state.gameEnd);
   
   // Get functions that don't change
-  const { applyEvent, setPlacement, unstage, commitTurnLocal } = useGame();
+  const { applyEvent, setPlacement, unstage, commitTurnLocal, setGameEnd } = useGame();
   
   // Compute derived values
   const turnCap = useGame(state => {
@@ -1077,6 +1077,9 @@ export default function Play({ route }) {
   const [scoreAnimationStep, setScoreAnimationStep] = useState(0); // 0 = none, 1 = top, 2 = middle, 3 = bottom, 4 = total, 5 = chip count indicator
   const [showChipChange, setShowChipChange] = useState(false);
   
+  // Game end popup state
+  const [showGameEndPopup, setShowGameEndPopup] = useState(false);
+  
   // Detailed scoring overlay state
 
 
@@ -1115,6 +1118,7 @@ export default function Play({ route }) {
         // Clear previous reveal/score UI when a new round begins
         setShowScore(false);
         setScoreDetail(null);
+        setShowGameEndPopup(false);
       }
       if (evt === 'round:reveal') {
         const meId = useGame.getState().userId;
@@ -1143,9 +1147,17 @@ export default function Play({ route }) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
       if (evt === 'game:end') {
-        // Handle game end - the splash screen will be shown automatically
+        // Handle game end - set the game end state but delay showing popup until scoring animation completes
         console.log('🎯 Game ended:', data);
+        setGameEnd(data);
         playSfx('commit'); // Play a sound for game end
+        
+        // Delay showing the winner/loser popup until after scoring animation completes
+        // The scoring animation takes 3 seconds, so wait 3.5 seconds total
+        // Note: Reveal timer is now 10 seconds, so popup will show well before timer expires
+        setTimeout(() => {
+          setShowGameEndPopup(true);
+        }, 3500);
       }
       applyEvent(evt, data);
     });
@@ -1203,6 +1215,13 @@ export default function Play({ route }) {
       setShowChipChange(false);
     }
   }, [showScore, scoreDetail]);
+
+  // Reset game end popup when gameEnd state changes
+  useEffect(() => {
+    if (!gameEnd) {
+      setShowGameEndPopup(false);
+    }
+  }, [gameEnd]);
 
   // Function to manually trigger animation
   const triggerAnimation = () => {
@@ -1501,10 +1520,15 @@ export default function Play({ route }) {
 
 
 
-  // Game End Splash Screen
-  if (gameEnd) {
+  // Game End Splash Screen - only show after scoring animation completes
+  if (gameEnd && showGameEndPopup) {
     const isWinner = gameEnd.winner?.userId === meId;
     const isLoser = gameEnd.loser?.userId === meId;
+    
+    // Stop the timer when game ends
+    if (timer.isActive) {
+      setTimer(prev => ({ ...prev, isActive: false }));
+    }
     
     return (
       <View style={{ 
@@ -1545,9 +1569,9 @@ export default function Play({ route }) {
             lineHeight: 24
           }}>
             {isWinner 
-              ? `Winner + 500 chips to your chip balance`
+              ? `You win! 1000 chips added to your chip balance.`
               : isLoser 
-                ? `Loser - 500 chips to your chip balance`
+                ? `You lost... you've lost 500 chips from your chip balance.`
                 : 'The game has ended'
             }
           </Text>
@@ -1576,10 +1600,10 @@ export default function Play({ route }) {
           
           <Pressable
             onPress={() => {
-              // Leave the room and navigate back to home
+              // Leave the room and navigate back to lobby
               emit('room:leave', { roomId: roomId });
-              // Navigate back to home screen
-              navigation.navigate('Home');
+              // Navigate back to lobby screen
+              navigation.navigate('Lobby');
             }}
             style={{
               backgroundColor: colors.accent,

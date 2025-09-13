@@ -857,6 +857,151 @@
       }
     }
 
+    socket.on("game:end", (data) => {
+      console.log("🎯 WEB APP: Game ended:", data);
+      
+      // Stop any active timer
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+      
+      // Clear timer display
+      updateTimerDisplay();
+      
+      // Show game end modal
+      showGameEndModal(data);
+      
+      log(`🏆 GAME END: ${data.winner ? 'Winner: ' + data.winner.name : 'No winner'}`);
+    });
+
+    // Game end modal
+    function showGameEndModal(data) {
+      // Create modal overlay
+      const modal = document.createElement('div');
+      modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 10000;
+      `;
+      
+      // Create modal content
+      const modalContent = document.createElement('div');
+      modalContent.style.cssText = `
+        background: #1b2030;
+        border: 2px solid #2a3244;
+        border-radius: 20px;
+        padding: 30px;
+        max-width: 400px;
+        text-align: center;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+      `;
+      
+      const isWinner = data.winner && data.winner.userId === myUserId;
+      const isLoser = data.loser && data.loser.userId === myUserId;
+      
+      // Set border color based on result
+      if (isWinner) {
+        modalContent.style.borderColor = '#4CAF50';
+      } else if (isLoser) {
+        modalContent.style.borderColor = '#F44336';
+      }
+      
+      // Create title
+      const title = document.createElement('h2');
+      title.style.cssText = `
+        margin: 0 0 20px 0;
+        font-size: 28px;
+        font-weight: bold;
+        color: ${isWinner ? '#4CAF50' : isLoser ? '#F44336' : '#e7e8ea'};
+      `;
+      title.textContent = isWinner ? '🎉 Congratulations!' : isLoser ? '😔 Unlucky!' : 'Game Over';
+      
+      // Create message
+      const message = document.createElement('p');
+      message.style.cssText = `
+        margin: 0 0 20px 0;
+        font-size: 18px;
+        color: #e7e8ea;
+        line-height: 1.4;
+      `;
+      message.textContent = isWinner 
+        ? 'You win! 1000 chips added to your chip balance.'
+        : isLoser 
+          ? 'You lost... you\'ve lost 500 chips from your chip balance.'
+          : 'The game has ended';
+      
+      // Create chip display
+      const chipDisplay = document.createElement('div');
+      chipDisplay.style.cssText = `
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 20px;
+        font-size: 20px;
+        font-weight: bold;
+        color: #e7e8ea;
+      `;
+      
+      const chipIcon = document.createElement('span');
+      chipIcon.textContent = '🪙';
+      chipIcon.style.marginRight = '8px';
+      
+      const chipText = document.createElement('span');
+      const myFinalChips = data.finalChips?.find(p => p.userId === myUserId)?.chips || 500;
+      chipText.textContent = myFinalChips;
+      
+      chipDisplay.appendChild(chipIcon);
+      chipDisplay.appendChild(chipText);
+      
+      // Create return to home button
+      const returnButton = document.createElement('button');
+      returnButton.style.cssText = `
+        background: #7ee787;
+        color: #0f1115;
+        padding: 12px 24px;
+        border: none;
+        border-radius: 10px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color 0.2s;
+      `;
+      returnButton.textContent = 'Return to Home';
+      returnButton.onmouseover = () => returnButton.style.background = '#6dd676';
+      returnButton.onmouseout = () => returnButton.style.background = '#7ee787';
+      returnButton.onclick = () => {
+        // Leave the room
+        socket.emit('room:leave', { roomId: window.location.search.match(/room=([^&]+)/)?.[1] });
+        // Navigate back to lobby
+        window.location.href = '/lobby.html';
+      };
+      
+      // Assemble modal
+      modalContent.appendChild(title);
+      modalContent.appendChild(message);
+      modalContent.appendChild(chipDisplay);
+      modalContent.appendChild(returnButton);
+      modal.appendChild(modalContent);
+      
+      // Add to page
+      document.body.appendChild(modal);
+      
+      // Prevent closing by clicking outside (force user to click button)
+      modal.onclick = (e) => {
+        if (e.target === modal) {
+          // Don't close on outside click
+        }
+      };
+    }
+
     socket.on("error:msg", (e)=> log("ERROR "+e.message));
   </script>
 </body>

@@ -109,7 +109,7 @@ async function displayRoomState(roomId) {
   logToBoth('='.repeat(80));
   
   // Individual player timers for all games
-  logToBoth(`Individual Player Timers (Fantasyland: 50s, Normal: 15s)`);
+  logToBoth(`Individual Player Timers (Fantasyland: 50s, Normal: 10s)`);
   
   logToBoth('\n' + '='.repeat(80));
   
@@ -123,7 +123,7 @@ async function displayRoomState(roomId) {
     logToBoth(`  Fantasyland: ${player.inFantasyland ? 'YES' : 'NO'}`);
     logToBoth(`  Ready: ${player.ready ? 'YES' : 'NO'}`);
     logToBoth(`  Round Complete: ${player.roundComplete ? 'YES' : 'NO'}`);
-    logToBoth(`  Timer: ${playerTimer.active ? `${playerTimer.remaining}s` : 'INACTIVE'} (${player.timer?.phaseType || 'none'}) ${player.inFantasyland ? '(50s)' : '(15s)'}`);
+    logToBoth(`  Timer: ${playerTimer.active ? `${playerTimer.remaining}s` : 'INACTIVE'} (${player.timer?.phaseType || 'none'}) ${player.inFantasyland ? '(50s)' : '(10s)'}`);
     logToBoth(`  Cards in hand: ${formatCards(player.hand)}`);
     logToBoth(`  Cards in currentDeal: ${formatCards(player.currentDeal)}`);
     logToBoth(`  Discards: ${formatCards(player.discards)}`);

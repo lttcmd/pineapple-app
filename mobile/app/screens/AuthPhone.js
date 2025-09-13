@@ -49,14 +49,14 @@ export default function AuthPhone({ navigation }) {
           <Text style={{ 
             fontSize: 28, 
             fontWeight: "700", 
-            color: colors.text,
+            color: 'red',
             marginBottom: 8
           }}>
             Heads Up Pineapple
           </Text>
           <Text style={{ 
             fontSize: 16, 
-            color: colors.sub,
+            color: 'red',
             textAlign: 'center'
           }}>
             Enter your phone number to get started
@@ -67,7 +67,7 @@ export default function AuthPhone({ navigation }) {
           <Text style={{ 
             fontSize: 16, 
             fontWeight: "600",
-            color: colors.text,
+            color: 'red',
             marginBottom: 8
           }}>
             Phone Number
@@ -103,7 +103,7 @@ export default function AuthPhone({ navigation }) {
           }}
         >
           <Text style={{ 
-            color: isLoading ? colors.sub : colors.text,
+            color: 'red',
             fontSize: 16,
             fontWeight: '600'
           }}>

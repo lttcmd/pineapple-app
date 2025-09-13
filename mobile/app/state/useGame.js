@@ -31,6 +31,7 @@ export const useGame = create((set, get) => ({
   nextRoundReady: new Set(),                     // Set of userIds ready for next round
   inFantasyland: false,                          // Whether current player is in fantasyland
   tableChips: 500,                               // Current chip balance
+  gameEnd: null,                                 // Game end data when match is over
   
   // Timer state
   timer: {
@@ -53,6 +54,7 @@ export const useGame = create((set, get) => ({
   },
 
   setName: (name) => set({ name }),
+  setGameEnd: (gameEndData) => set({ gameEnd: gameEndData }),
 
   setPlacement: (row, card) => set((s) => {
     // block moving committed cards
@@ -151,7 +153,8 @@ export const useGame = create((set, get) => ({
           discards: [],
           reveal: null,
           nextRoundReady: new Set(), // Reset next round ready state
-          // Keep fantasyland status from previous reveal (don't reset here)
+          gameEnd: null, // Reset game end state for new hand
+          // Keep fantasyland status from previous reveal (don't override here)
           inFantasyland: s.inFantasyland,
         };
 

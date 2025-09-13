@@ -628,17 +628,17 @@ export class GameEngine {
     // Emit updated game state
     this.emitGameState();
     
-    // Start 20-second timer for auto-advance to next hand
+    // Start 10-second timer for auto-advance to next hand
     setTimeout(() => {
       console.log(`🎮 ENGINE: Reveal timer expired - auto-starting next hand`);
       this.startNewHand();
-    }, 20000);
+    }, 10000);
     
     // Emit reveal timer to all players
     if (this.io) {
       const revealTimer = {
-        deadlineEpochMs: Date.now() + 20000,
-        durationMs: 20000,
+        deadlineEpochMs: Date.now() + 10000,
+        durationMs: 10000,
         phaseType: 'reveal'
       };
       this.io.to(this.gameState.roomId).emit('timer:start', revealTimer);

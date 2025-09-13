@@ -7,7 +7,7 @@ import { GameEngine } from './GameEngine.js';
 import { mem } from '../../store/mem.js';
 import { id } from '../../utils/ids.js';
 import { updateStatsFromReveal } from '../stats.js';
-import { getUserByPhone, recordMatchEnd } from '../../store/database.js';
+import { getUserByPhone, recordMatchEnd, updateUserChips } from '../../store/database.js';
 
 // Map of room IDs to GameEngine instances
 const engineMap = new Map();
@@ -98,6 +98,21 @@ async function updateMatchStats(roomId, gameEndResult) {
     if (winnerDbId && loserDbId) {
       await recordMatchEnd(winnerDbId, loserDbId);
       console.log(`✅ Recorded match end stats for room ${roomId}: Winner ${winner.name}, Loser ${loser.name}`);
+      
+      // Final chip settlement for ranked matches
+      try {
+        // Winner gets all 1000 chips back to their account balance
+        await updateUserChips(winnerDbId, 1000);
+        console.log(`💰 CHIP SETTLEMENT: Winner ${winner.name} gets +1000 chips to account balance`);
+        
+        // Loser gets 0 chips back (they already lost 500 at the start)
+        // No need to call updateUserChips for loser since they get nothing
+        console.log(`💰 CHIP SETTLEMENT: Loser ${loser.name} gets 0 chips back (already lost 500 at start)`);
+        
+        console.log(`✅ Final chip settlement completed for room ${roomId}`);
+      } catch (chipError) {
+        console.error(`❌ Error in chip settlement for room ${roomId}:`, chipError);
+      }
     }
   } catch (error) {
     console.error(`❌ Error updating match stats for room ${roomId}:`, error);
